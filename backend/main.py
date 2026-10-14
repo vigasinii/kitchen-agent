@@ -328,6 +328,8 @@ def text_to_speech(request: TTSRequest):
 
     try:
         from groq import Groq
+        import groq as groq_pkg
+        print(f"[TTS] groq version: {groq_pkg.__version__}, text length: {len(text)}")
         client = Groq(api_key=api_key)
         response = client.audio.speech.create(
             model="canopylabs/orpheus-v1-english",
@@ -336,8 +338,10 @@ def text_to_speech(request: TTSRequest):
             response_format="wav",
         )
         audio_bytes = response.read()
+        print(f"[TTS] success, bytes: {len(audio_bytes)}")
         return Response(content=audio_bytes, media_type="audio/wav")
     except Exception as e:
+        print(f"[TTS] error: {e}")
         raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
 
 

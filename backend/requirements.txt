@@ -1,5 +1,5 @@
 fastapi
 uvicorn
 sqlmodel
-groq
+groq>=1.0.0
 python-dotenv
