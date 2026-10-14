@@ -129,12 +129,14 @@ def test_conflicting_preferences():
 
 def test_empty_household():
     print("\n--- 6. Missing Household Info ---")
-    result = generate_meal_plan([], special_requests="")
-    plan = result.get("plan", {})
-    check("Fallback plan returned for empty household", len(plan) >= 7 or isinstance(plan, dict),
-          f"keys={list(plan.keys())}")
-    # Should not crash, should return something usable
-    check("Result has 'plan' key", "plan" in result)
+    # Empty household: generate_meal_plan should either succeed or raise clearly
+    try:
+        result = generate_meal_plan([], special_requests="")
+        plan = result.get("plan", {})
+        check("Plan returned for empty household", len(plan) >= 7, f"keys={list(plan.keys())}")
+    except Exception as e:
+        check("Empty household raises a clear error (not a silent crash)", True,
+              f"exception={type(e).__name__}: {str(e)[:100]}")
 
 
 # ---- 7. Budget-constrained household ----
@@ -503,15 +505,11 @@ def test_api_failure_graceful():
 
     try:
         result = generate_meal_plan(HOUSEHOLD, special_requests="Any meals")
-        plan = result.get("plan", {})
-        # With invalid key, generate_meal_plan should return a fallback plan
-        check("Fallback plan returned on API failure", isinstance(plan, dict),
-              f"type={type(plan).__name__}, keys={list(plan.keys())[:3]}")
-        check("Fallback plan has content", len(plan) > 0,
-              f"keys={list(plan.keys())}")
+        # Should not succeed with invalid key
+        check("API failure should raise, not silently succeed", False,
+              "generate_meal_plan returned a result with invalid API key")
     except Exception as e:
-        # If it raises, that's acceptable as long as it's a clear error
-        check("API failure raises exception cleanly (not a silent crash)", True,
+        check("API failure raises exception clearly (no silent fallback)", True,
               f"exception={type(e).__name__}: {str(e)[:100]}")
     finally:
         if original_key:
