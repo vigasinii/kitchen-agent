@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime
 from typing import List, Dict
 from sqlmodel import Session, select
@@ -205,13 +206,21 @@ class PlannerAgent:
 
         try:
             while True:
-                response = self.client.chat.completions.create(
-                    model=GROQ_MODEL,
-                    messages=messages,
-                    tools=PLANNER_TOOLS,
-                    tool_choice="auto",
-                    max_tokens=400,
-                )
+                for attempt in range(3):
+                    try:
+                        response = self.client.chat.completions.create(
+                            model=GROQ_MODEL,
+                            messages=messages,
+                            tools=PLANNER_TOOLS,
+                            tool_choice="auto",
+                            max_tokens=400,
+                        )
+                        break
+                    except Exception as e:
+                        if "429" in str(e) and attempt < 2:
+                            time.sleep(30)
+                        else:
+                            raise
                 msg = response.choices[0].message
 
                 if msg.tool_calls:

@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from typing import List, Dict, Any
 
 
@@ -94,15 +95,26 @@ Reply ONLY with JSON: {{"Monday":{{"breakfast":"...","lunch":"...","dinner":"...
     try:
         from groq import Groq
         client = Groq(api_key=api_key)
-        response = client.chat.completions.create(
-            model="qwen/qwen3.8-27b",
-            messages=[
-                {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=600,
-            temperature=0.7,
-        )
+        response = None
+        for attempt in range(3):
+            try:
+                response = client.chat.completions.create(
+                    model="qwen/qwen3.8-27b",
+                    messages=[
+                        {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=600,
+                    temperature=0.7,
+                )
+                break
+            except Exception as e:
+                if "429" in str(e) and attempt < 2:
+                    time.sleep(30)
+                else:
+                    raise
+        if not response:
+            raise Exception("No response after retries")
         raw = response.choices[0].message.content.strip()
         # Strip markdown code fences if present
         if raw.startswith("```"):
