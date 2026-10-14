@@ -183,7 +183,22 @@ class PlannerAgent:
                 plan.meals = json.dumps(meals)
                 self.session.add(plan)
                 self.session.commit()
-                return json.dumps({"success": True, "updated": f"{day} {meal_type} -> {tool_input['new_meal']}", "safety": "passed"})
+                # Auto-regenerate grocery list if one exists for this plan
+                from models import GroceryList
+                from sqlmodel import select as sql_select
+                from tools.grocery import consolidate_grocery_list
+                existing_grocery = self.session.exec(
+                    sql_select(GroceryList).where(GroceryList.meal_plan_id == plan.id)
+                ).first()
+                grocery_note = ""
+                if existing_grocery:
+                    items = consolidate_grocery_list(meals)
+                    existing_grocery.items = json.dumps(items)
+                    existing_grocery.status = "pending"
+                    self.session.add(existing_grocery)
+                    self.session.commit()
+                    grocery_note = " Grocery list regenerated automatically."
+                return json.dumps({"success": True, "updated": f"{day} {meal_type} -> {tool_input['new_meal']}", "safety": "passed", "note": grocery_note.strip()})
             return json.dumps({"error": f"Day {day} not found in plan"})
 
         elif tool_name == "get_current_plan":

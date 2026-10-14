@@ -1,5 +1,5 @@
 /* =============================================================
-   Kitchen Agent — Frontend Application
+   Kitchen Agent - Frontend Application
    React 18 + Babel JSX, all API calls to http://localhost:8888
    ============================================================= */
 
@@ -1506,7 +1506,7 @@ function AnalyticsScreen() {
 
       {sessions.filter(s => s.status === 'active').length > 0 && (
         <div className="section-block" style={{ marginTop: 24 }}>
-          <div className="section-label">Active Sessions — Record Outcome</div>
+          <div className="section-label">Active Sessions: Record Outcome</div>
           {sessions.filter(s => s.status === 'active').map(s => (
             <div key={s.id} className="session-outcome-row">
               <div>

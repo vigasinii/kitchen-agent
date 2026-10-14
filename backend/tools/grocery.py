@@ -121,7 +121,7 @@ def consolidate_grocery_list(meal_plan: Dict) -> List[Dict]:
 
 
 def simulate_instamart_order(grocery_list: List[Dict]) -> Dict:
-    """Simulate placing a grocery order — returns fake order details."""
+    """Simulate placing a grocery order. Returns fake order details."""
     order_id = "IM-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
     item_count = len(grocery_list)
 

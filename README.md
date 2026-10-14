@@ -29,34 +29,34 @@ cd backend
 python evals.py
 ```
 
-Runs 8 scenario groups (allergy enforcement, vegetarian constraints, ingredient safety, meal generation, substitution chains, approval parsing) with 15+ individual checks. Exit code 0 = all passed.
+Runs 18 scenario groups (allergy enforcement, vegetarian constraints, ingredient safety, dairy allergy, conflicting preferences, empty household fallback, budget-constrained, time-constrained, substitution chains, approval state transitions, rejection unchanged plan, grocery regeneration, duplicate approval prevention, API failure degradation, cook session completion) with 30+ individual checks. Exit code 0 = all passed.
 
 ## Demo household
 
 | Name   | Role        | Key constraints                               |
 |--------|-------------|-----------------------------------------------|
-| Sarah  | Adult       | Vegetarian — no meat                         |
-| Mike   | Adult       | No restrictions                               |
-| Emma   | Child (~8)  | Severe peanut allergy (life-critical)         |
-| George | Grandparent | Soft foods, mild spice, diabetic-friendly     |
+| Sarah  | Adult       | Vegetarian, no meat                          |
+| Mike   | Adult       | No restrictions                              |
+| Emma   | Child (~8)  | Severe peanut allergy (life-critical)        |
+| George | Grandparent | Soft foods, mild spice, diabetic-friendly    |
 
 A 7-day meal plan and grocery list are seeded on first launch so the UI is populated before you chat.
 
 ## Using the app
 
-**Planner tab** — chat to generate or adjust the week's meals. Voice input via mic button. Try:
+**Planner tab**: chat to generate or adjust the week's meals. Voice input via mic button. Try:
 - "Plan a new week with more Indian food"
 - "Can we swap Tuesday dinner for something lighter for George?"
 - "Is cashew cream safe for Emma?"
 
-**Cook tab** — select a day and meal, click Start Cooking, then get step-by-step guidance. Try:
+**Cook tab**: select a day and meal, click Start Cooking, then get step-by-step guidance. Try:
 - "I don't have salmon, what can I substitute?"
 - "Emma has a friend over, can we make the dessert nut-free?"
 - "The household needs to approve skipping tonight's planned meal"
 
-**Meal Plan tab** — 7-day grid, approve the plan to lock it in.
+**Meal Plan tab**: 7-day grid, approve the plan to lock it in.
 
-**Grocery tab** — consolidated shopping list, click Order via Instamart to simulate ordering.
+**Grocery tab**: consolidated shopping list, click Order via Instamart to simulate ordering.
 
 ## Project structure
 

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Dict
 from sqlmodel import Session, select
 
-from models import HouseholdMember, MealPlan, CookSession, ConversationMessage
+from models import HouseholdMember, MealPlan, CookSession, ConversationMessage, ApprovalRequest
 from tools.meal_tools import check_ingredient_safety
 
 GROQ_MODEL = "qwen/qwen3.8-27b"
@@ -93,13 +93,18 @@ COOK_TOOLS = [
         "type": "function",
         "function": {
             "name": "flag_household_approval_needed",
-            "description": "Flag that a significant change needs household approval before proceeding.",
+            "description": "Flag that a significant change needs household approval before proceeding. Creates a structured approval request.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "issue": {"type": "string", "description": "What needs approval"},
+                    "issue": {"type": "string", "description": "What problem the cook encountered"},
                     "proposed_change": {"type": "string", "description": "What change is proposed"},
-                    "cook_session_id": {"type": "integer", "description": "Cook session ID"}
+                    "cook_session_id": {"type": "integer", "description": "Cook session ID"},
+                    "meal_plan_id": {"type": "integer", "description": "Meal plan ID (optional)"},
+                    "day": {"type": "string", "description": "Day of the week this affects (optional)"},
+                    "meal_type": {"type": "string", "description": "Meal type this affects: breakfast, lunch, or dinner (optional)"},
+                    "original_ingredient": {"type": "string", "description": "The original ingredient being substituted (optional)"},
+                    "reason": {"type": "string", "description": "Why the change is needed (optional)"}
                 },
                 "required": ["issue", "proposed_change", "cook_session_id"]
             }
@@ -250,9 +255,13 @@ class CookAgent:
             cook_session = self.session.get(CookSession, cook_session_id)
             if not cook_session:
                 return json.dumps({"error": "Cook session not found"})
-            # Count how many approval requests were raised
+            # Count approval requests from both notes (legacy) and ApprovalRequest table
             notes = cook_session.notes or ""
-            interventions = notes.count("[APPROVAL NEEDED]") + notes.count("[APPROVED]") + notes.count("[REJECTED]")
+            notes_count = notes.count("[APPROVAL NEEDED]") + notes.count("[APPROVED]") + notes.count("[REJECTED]")
+            db_count = len(self.session.exec(
+                select(ApprovalRequest).where(ApprovalRequest.cook_session_id == cook_session_id)
+            ).all())
+            interventions = max(notes_count, db_count)
             cook_session.status = "completed"
             cook_session.outcome_meal = tool_input.get("outcome_meal", cook_session.meal_name)
             cook_session.outcome_notes = tool_input.get("outcome_notes", "")
@@ -277,13 +286,44 @@ class CookAgent:
         elif tool_name == "flag_household_approval_needed":
             cook_session_id = tool_input.get("cook_session_id")
             cook_session = self.session.get(CookSession, cook_session_id)
+
+            approval_id = None
+
             if cook_session:
+                # Legacy notes-based tracking
                 note = f"[APPROVAL NEEDED] {tool_input['issue']} - Proposed: {tool_input['proposed_change']}"
                 existing = cook_session.notes or ""
                 cook_session.notes = (existing + "\n" + note).strip()
                 self.session.add(cook_session)
                 self.session.commit()
-            return json.dumps({"flagged": True, "issue": tool_input["issue"], "proposed_change": tool_input["proposed_change"], "message": "Issue flagged for household review"})
+
+                # Structured ApprovalRequest record
+                approval = ApprovalRequest(
+                    cook_session_id=cook_session_id,
+                    meal_plan_id=tool_input.get("meal_plan_id") or cook_session.meal_plan_id,
+                    day=tool_input.get("day") or cook_session.day or "",
+                    meal_type=tool_input.get("meal_type", ""),
+                    issue=tool_input["issue"],
+                    original_ingredient=tool_input.get("original_ingredient", ""),
+                    proposed_change=tool_input["proposed_change"],
+                    reason=tool_input.get("reason", ""),
+                    requested_by="cook",
+                    requested_at=datetime.utcnow().isoformat(),
+                    status="pending",
+                )
+                self.session.add(approval)
+                self.session.commit()
+                self.session.refresh(approval)
+                approval_id = approval.id
+
+            return json.dumps({
+                "flagged": True,
+                "approval_id": approval_id,
+                "issue": tool_input["issue"],
+                "proposed_change": tool_input["proposed_change"],
+                "message": "Issue flagged for household review. Approval request created.",
+                "next_step": "Wait for household to approve or reject via /approvals/{approval_id}/decide"
+            })
 
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
@@ -334,6 +374,3 @@ class CookAgent:
 
         self._save_message("assistant", response_text, cook_session_id)
         return response_text
-
-
-

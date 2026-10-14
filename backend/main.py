@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
@@ -16,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import engine, get_session, init_db
-from models import HouseholdMember, MealPlan, GroceryList, CookSession, ConversationMessage
+from models import HouseholdMember, MealPlan, GroceryList, CookSession, ConversationMessage, ApprovalRequest
 from tools.grocery import consolidate_grocery_list, simulate_instamart_order
 
 app = FastAPI(title="Anyaa Kitchen OS", version="1.0.0")
@@ -330,7 +331,11 @@ def complete_cook_session(session_id: int, body: SessionOutcome, session: Sessio
     if not cook_session:
         raise HTTPException(status_code=404, detail="Cook session not found")
     notes = cook_session.notes or ""
-    interventions = notes.count("[APPROVAL NEEDED]") + notes.count("[APPROVED]") + notes.count("[REJECTED]")
+    notes_count = notes.count("[APPROVAL NEEDED]") + notes.count("[APPROVED]") + notes.count("[REJECTED]")
+    db_count = len(session.exec(
+        select(ApprovalRequest).where(ApprovalRequest.cook_session_id == session_id)
+    ).all())
+    interventions = max(notes_count, db_count)
     cook_session.status = "completed"
     cook_session.outcome_meal = body.outcome_meal
     cook_session.outcome_notes = body.outcome_notes
@@ -381,7 +386,6 @@ def get_analytics(session: Session = Depends(get_session)):
         all_subs.extend(subs)
 
     missing_ingredients = [sub.get("missing") for sub in all_subs if sub.get("missing")]
-    from collections import Counter
     common_missing = Counter(missing_ingredients).most_common(5)
 
     return {
@@ -398,7 +402,7 @@ def get_analytics(session: Session = Depends(get_session)):
     }
 
 
-# ---- Cook Approval Workflow ----
+# ---- Cook Approval Workflow (legacy, text-parsing based) ----
 
 class ApprovalDecision(BaseModel):
     decision: str  # "approve" or "reject"
@@ -407,10 +411,34 @@ class ApprovalDecision(BaseModel):
 
 @app.get("/cook-sessions/{session_id}/approvals")
 def get_pending_approvals(session_id: int, session: Session = Depends(get_session)):
-    """List all pending approval requests from the cook for this session."""
+    """List all approval requests for this session (structured + legacy notes)."""
     cook_session = session.get(CookSession, session_id)
     if not cook_session:
         raise HTTPException(status_code=404, detail="Cook session not found")
+
+    # Return structured ApprovalRequest records if available
+    structured = session.exec(
+        select(ApprovalRequest).where(ApprovalRequest.cook_session_id == session_id)
+    ).all()
+
+    if structured:
+        return {
+            "cook_session_id": session_id,
+            "approvals": [
+                {
+                    "id": a.id,
+                    "issue": a.issue,
+                    "proposed_change": a.proposed_change,
+                    "status": a.status,
+                    "requested_at": a.requested_at,
+                    "decided_at": a.decided_at,
+                    "decision_reason": a.decision_reason,
+                }
+                for a in structured
+            ]
+        }
+
+    # Fallback: legacy text parsing
     notes = cook_session.notes or ""
     approvals = []
     for i, line in enumerate(notes.splitlines()):
@@ -423,13 +451,13 @@ def get_pending_approvals(session_id: int, session: Session = Depends(get_sessio
 
 
 @app.post("/cook-sessions/{session_id}/approvals/{approval_index}")
-def decide_approval(
+def decide_approval_legacy(
     session_id: int,
     approval_index: int,
     body: ApprovalDecision,
     session: Session = Depends(get_session)
 ):
-    """Household approves or rejects a cook's change request."""
+    """Legacy: approve/reject by line index in session notes."""
     cook_session = session.get(CookSession, session_id)
     if not cook_session:
         raise HTTPException(status_code=404, detail="Cook session not found")
@@ -452,6 +480,130 @@ def decide_approval(
         "decision": body.decision,
         "message": f"Change {'approved' if body.decision == 'approve' else 'rejected'} by household.",
         "note": lines[approval_index]
+    }
+
+
+# ---- Structured Approval Endpoints ----
+
+@app.get("/approvals")
+def list_approvals(status: Optional[str] = None, session: Session = Depends(get_session)):
+    """List all approval requests, optionally filtered by status."""
+    query = select(ApprovalRequest)
+    if status:
+        query = query.where(ApprovalRequest.status == status)
+    approvals = session.exec(query.order_by(ApprovalRequest.id.desc())).all()
+    return [
+        {
+            "id": a.id,
+            "cook_session_id": a.cook_session_id,
+            "meal_plan_id": a.meal_plan_id,
+            "day": a.day,
+            "meal_type": a.meal_type,
+            "issue": a.issue,
+            "original_ingredient": a.original_ingredient,
+            "proposed_change": a.proposed_change,
+            "reason": a.reason,
+            "requested_by": a.requested_by,
+            "requested_at": a.requested_at,
+            "status": a.status,
+            "decided_by": a.decided_by,
+            "decided_at": a.decided_at,
+            "decision_reason": a.decision_reason,
+        }
+        for a in approvals
+    ]
+
+
+@app.get("/approvals/{approval_id}")
+def get_approval(approval_id: int, session: Session = Depends(get_session)):
+    """Get a single approval request."""
+    approval = session.get(ApprovalRequest, approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+    return {
+        "id": approval.id,
+        "cook_session_id": approval.cook_session_id,
+        "meal_plan_id": approval.meal_plan_id,
+        "day": approval.day,
+        "meal_type": approval.meal_type,
+        "issue": approval.issue,
+        "original_ingredient": approval.original_ingredient,
+        "proposed_change": approval.proposed_change,
+        "reason": approval.reason,
+        "requested_by": approval.requested_by,
+        "requested_at": approval.requested_at,
+        "status": approval.status,
+        "decided_by": approval.decided_by,
+        "decided_at": approval.decided_at,
+        "decision_reason": approval.decision_reason,
+    }
+
+
+class ApprovalDecideBody(BaseModel):
+    decision: str  # "approve" or "reject"
+    reason: Optional[str] = ""
+    decided_by: Optional[str] = "household"
+
+
+@app.post("/approvals/{approval_id}/decide")
+def decide_approval(approval_id: int, body: ApprovalDecideBody, session: Session = Depends(get_session)):
+    """Household approves or rejects a structured approval request."""
+    approval = session.get(ApprovalRequest, approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+
+    if approval.status != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Approval already decided: status is '{approval.status}'. Cannot decide again."
+        )
+
+    if body.decision not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="decision must be 'approve' or 'reject'")
+
+    approval.status = "approved" if body.decision == "approve" else "rejected"
+    approval.decided_by = body.decided_by or "household"
+    approval.decided_at = datetime.utcnow().isoformat()
+    approval.decision_reason = body.reason or ""
+    session.add(approval)
+    session.commit()
+
+    grocery_regenerated = False
+
+    # If approved and proposed_change looks like a meal swap, update the plan
+    if approval.status == "approved" and approval.day and approval.meal_type:
+        plan = session.get(MealPlan, approval.meal_plan_id)
+        if plan:
+            meals = json.loads(plan.meals)
+            day = approval.day
+            meal_type = approval.meal_type
+            if day in meals and meal_type in meals[day] and approval.proposed_change:
+                meals[day][meal_type] = approval.proposed_change
+                plan.meals = json.dumps(meals)
+                session.add(plan)
+                session.commit()
+
+                # Regenerate grocery list
+                existing_grocery = session.exec(
+                    select(GroceryList).where(GroceryList.meal_plan_id == approval.meal_plan_id)
+                ).first()
+                if existing_grocery:
+                    items = consolidate_grocery_list(meals)
+                    existing_grocery.items = json.dumps(items)
+                    existing_grocery.status = "pending"
+                    session.add(existing_grocery)
+                    session.commit()
+                    grocery_regenerated = True
+
+    session.refresh(approval)
+    return {
+        "id": approval.id,
+        "status": approval.status,
+        "decided_by": approval.decided_by,
+        "decided_at": approval.decided_at,
+        "decision_reason": approval.decision_reason,
+        "grocery_regenerated": grocery_regenerated,
+        "message": f"Request {'approved' if approval.status == 'approved' else 'rejected'} by {approval.decided_by}."
     }
 
 
