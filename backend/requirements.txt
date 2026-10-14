@@ -2,6 +2,6 @@ fastapi
 uvicorn
 sqlmodel
 groq>=1.0.0
-openai>=1.0.0
+openai>=1.0.0,<2.0.0
 python-dotenv
 edge-tts>=6.1.9
