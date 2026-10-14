@@ -109,7 +109,7 @@ Reply ONLY with JSON: {{"Monday":{{"breakfast":"...","lunch":"...","dinner":"...
                 ],
                 max_tokens=600,
                 temperature=0.7,
-                timeout=30,
+                timeout=15,
             )
             elapsed = round(time.time() - t0, 2)
             raw = response.choices[0].message.content.strip()
@@ -120,19 +120,24 @@ Reply ONLY with JSON: {{"Monday":{{"breakfast":"...","lunch":"...","dinner":"...
             raw = raw.strip()
             plan = json.loads(raw)
             days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-            if not all(d in plan for d in days):
-                raise ValueError(f"Plan missing days: {[d for d in days if d not in plan]}")
+            meals = ["breakfast", "lunch", "dinner"]
+            missing_days = [d for d in days if d not in plan]
+            if missing_days:
+                raise ValueError(f"Plan missing days: {missing_days}")
+            for day in days:
+                missing_meals = [m for m in meals if m not in plan.get(day, {})]
+                if missing_meals:
+                    raise ValueError(f"{day} missing meals: {missing_meals}")
             restrictions_used = [r for m in household_members for r in m.get("dietary_restrictions", [])]
             allergies_used = [a for m in household_members for a in m.get("allergies", [])]
             return {
                 "plan": plan,
                 "notes": f"AI-generated in {elapsed}s. Restrictions: {restrictions_used}. Allergens excluded: {allergies_used}.",
-                "week_start": "2026-10-14"
             }
         except Exception as e:
             last_error = e
             if "429" in str(e) and attempt == 0:
-                time.sleep(5)
+                time.sleep(1)
             else:
                 break
 

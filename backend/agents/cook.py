@@ -114,7 +114,7 @@ COOK_TOOLS = [
 ]
 
 GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
-MAX_TOOL_ROUNDS = 5
+MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "3"))
 
 SYSTEM_PROMPT = """You are Arjun, the household's cook guide. You have years of kitchen experience and you're calm under pressure. You've cooked for this family enough times that you know their quirks. You keep things moving.
 
@@ -358,11 +358,11 @@ class CookAgent:
                         tools=COOK_TOOLS,
                         tool_choice="auto",
                         max_tokens=500,
-                        timeout=30,
+                        timeout=15,
                     )
                 except Exception as e:
                     if "429" in str(e) and attempt == 0:
-                        time.sleep(5)
+                        time.sleep(1)
                     else:
                         raise
 
@@ -386,8 +386,8 @@ class CookAgent:
             else:
                 response_text = "I reached the maximum number of steps. Please try a simpler request."
 
-        except Exception as e:
-            response_text = f"Error: {str(e)}"
+        except Exception:
+            response_text = "Something went wrong. Please try again in a moment."
 
         if not response_text:
             response_text = "I could not generate a response. Please try again."

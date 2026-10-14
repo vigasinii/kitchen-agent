@@ -77,7 +77,7 @@ Hard rules: every meal safe for ALL members. Strict allergens never included. Ve
 Use tools to fetch and update plans. No emojis. No em dashes. Numbered lists for steps, bullets for options."""
 
 GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
-MAX_TOOL_ROUNDS = 5
+MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "3"))
 
 
 class PlannerAgent:
@@ -154,10 +154,11 @@ class PlannerAgent:
             ]
             try:
                 plan_data = generate_meal_plan(member_data, special_requests=tool_input.get("special_requests", ""))
-            except Exception as e:
-                return json.dumps({"error": f"Meal plan generation failed: {str(e)}. Please try again in a moment."})
+            except Exception:
+                return json.dumps({"error": "Meal plan generation failed. Please try again in a moment."})
+            week_start = tool_input.get("week_start") or datetime.utcnow().strftime("%Y-%m-%d")
             new_plan = MealPlan(
-                week_start=tool_input.get("week_start", "2026-10-14"),
+                week_start=week_start,
                 status="planning",
                 meals=json.dumps(plan_data["plan"])
             )
@@ -245,11 +246,11 @@ class PlannerAgent:
                         tools=PLANNER_TOOLS,
                         tool_choice="auto",
                         max_tokens=400,
-                        timeout=30,
+                        timeout=15,
                     )
                 except Exception as e:
                     if "429" in str(e) and attempt == 0:
-                        time.sleep(5)
+                        time.sleep(1)
                     else:
                         raise
 
@@ -273,8 +274,8 @@ class PlannerAgent:
             else:
                 response_text = "I reached the maximum number of steps. Please try a simpler request."
 
-        except Exception as e:
-            response_text = f"Error: {str(e)}"
+        except Exception:
+            response_text = "Something went wrong. Please try again in a moment."
 
         if not response_text:
             response_text = "I could not generate a response. Please try again."

@@ -22,9 +22,12 @@ from tools.grocery import consolidate_grocery_list, simulate_instamart_order
 
 app = FastAPI(title="Anyaa Kitchen OS", version="1.0.0")
 
+_cors_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+_cors_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()] or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
