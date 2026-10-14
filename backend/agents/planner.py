@@ -275,7 +275,9 @@ class PlannerAgent:
             else:
                 response_text = "I reached the maximum number of steps. Please try a simpler request."
 
-        except Exception:
+        except Exception as e:
+            import traceback
+            print(f"[PLANNER ERROR] {e}\n{traceback.format_exc()}")
             response_text = "Something went wrong. Please try again in a moment."
 
         if not response_text:
