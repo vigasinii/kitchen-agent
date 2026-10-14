@@ -328,8 +328,7 @@ def text_to_speech(request: TTSRequest):
 
     try:
         from groq import Groq
-        import groq as groq_pkg
-        print(f"[TTS] groq version: {groq_pkg.__version__}, text length: {len(text)}")
+        print(f"[TTS] attempting, text length: {len(text)}")
         client = Groq(api_key=api_key)
         response = client.audio.speech.create(
             model="canopylabs/orpheus-v1-english",
