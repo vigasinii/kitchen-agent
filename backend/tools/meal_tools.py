@@ -12,7 +12,12 @@ ALLERGEN_MAP = {
     "eggs": ["egg", "eggs", "mayonnaise"],
     "soy": ["soy", "tofu", "tempeh", "edamame", "soy sauce"],
     "fish": ["salmon", "tuna", "cod", "tilapia", "halibut", "anchovy"],
+    "sesame": ["sesame", "tahini", "sesame oil", "sesame seed"],
 }
+
+# Phrases that negate an allergen mention — "no peanuts", "peanut-free", "without peanuts"
+NEGATION_PREFIXES = ["no ", "without ", "free of ", "free from ", "-free", "peanut-free",
+                     "nut-free", "dairy-free", "gluten-free", "egg-free"]
 
 MEAT_WORDS = ["chicken", "beef", "pork", "lamb", "turkey", "bacon", "ham", "sausage",
               "prawn", "shrimp", "mutton", "veal", "duck", "fish", "salmon", "tuna"]
@@ -115,7 +120,7 @@ OUTPUT FORMAT - respond ONLY with valid JSON, no other text:
                 {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=2048,
+            max_tokens=1200,
             temperature=0.7,
         )
         raw = response.choices[0].message.content.strip()
@@ -145,6 +150,23 @@ OUTPUT FORMAT - respond ONLY with valid JSON, no other text:
     }
 
 
+def _trigger_is_negated(meal_lower: str, trigger: str) -> bool:
+    """Return True if the trigger word appears in a negation context (e.g. 'no peanuts', 'peanut-free')."""
+    idx = meal_lower.find(trigger)
+    if idx == -1:
+        return False
+    # Check up to 15 chars before the trigger for negation words
+    prefix_window = meal_lower[max(0, idx - 15): idx]
+    for neg in NEGATION_PREFIXES:
+        if neg in prefix_window or meal_lower.find(neg + trigger) != -1:
+            return True
+    # Check compound negations like "peanut-free" after trigger
+    suffix_window = meal_lower[idx: idx + len(trigger) + 6]
+    if suffix_window.endswith("-free"):
+        return True
+    return False
+
+
 def validate_meal_against_household(meal_description: str, household_members: List[Dict]) -> Dict:
     """Check if a meal description is safe for all household members. Returns errors if not."""
     meal_lower = meal_description.lower()
@@ -157,7 +179,7 @@ def validate_meal_against_household(meal_description: str, household_members: Li
             allergy_lower = allergy.lower()
             triggers = ALLERGEN_MAP.get(allergy_lower, [allergy_lower])
             for trigger in triggers:
-                if trigger in meal_lower:
+                if trigger in meal_lower and not _trigger_is_negated(meal_lower, trigger):
                     violations.append({
                         "member": name,
                         "type": "allergy",

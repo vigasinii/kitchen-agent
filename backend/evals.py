@@ -245,9 +245,8 @@ def test_approval_state_transitions():
     from sqlmodel import create_engine, Session
     from sqlmodel import SQLModel
     from models import CookSession, MealPlan, ApprovalRequest
-    from database import DATABASE_URL
 
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as db:
@@ -312,10 +311,9 @@ def test_rejection_leaves_plan_unchanged():
     from sqlmodel import create_engine, Session
     from sqlmodel import SQLModel
     from models import CookSession, MealPlan, ApprovalRequest
-    from database import DATABASE_URL
 
     original_meal = "Paneer Butter Masala"
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as db:
@@ -378,9 +376,8 @@ def test_grocery_regeneration():
     from sqlmodel import SQLModel
     from models import MealPlan, GroceryList
     from tools.grocery import consolidate_grocery_list
-    from database import DATABASE_URL
 
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
 
     original_meals = {
@@ -441,9 +438,8 @@ def test_duplicate_approval_prevention():
     from sqlmodel import create_engine, Session
     from sqlmodel import SQLModel
     from models import CookSession, MealPlan, ApprovalRequest
-    from database import DATABASE_URL
 
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as db:
@@ -531,9 +527,8 @@ def test_cook_session_completion():
     from sqlmodel import create_engine, Session
     from sqlmodel import SQLModel
     from models import CookSession, MealPlan
-    from database import DATABASE_URL
 
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as db:
@@ -630,12 +625,11 @@ def test_approval_end_to_end():
     from sqlmodel import create_engine, Session
     from sqlmodel import SQLModel
     from models import CookSession, MealPlan, ApprovalRequest
-    from database import DATABASE_URL
 
-    engine = create_engine(DATABASE_URL)
-    SQLModel.metadata.create_all(engine)
+    engine_e2e = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine_e2e)
 
-    with Session(engine) as db:
+    with Session(engine_e2e) as db:
         plan = MealPlan(
             week_start="2026-10-20",
             status="planning",

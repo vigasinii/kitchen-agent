@@ -145,7 +145,7 @@ RESPONSE STYLE RULES:
 
 SUBSTITUTION_MAP = {
     "butter": ["olive oil", "coconut oil", "vegan butter"],
-    "milk": ["oat milk", "almond milk (check with Emma's peanut allergy - tree nuts OK)", "soy milk"],
+    "milk": ["oat milk", "almond milk (tree nuts OK for Emma)", "soy milk"],
     "eggs": ["flax egg (1 tbsp flax + 3 tbsp water)", "applesauce (for baking)", "mashed banana"],
     "chicken": ["chickpeas (V)", "tofu (V)", "tempeh (V)", "turkey"],
     "beef": ["lentils (V)", "mushrooms (V)", "turkey"],
@@ -349,7 +349,7 @@ class CookAgent:
                     messages=messages,
                     tools=COOK_TOOLS,
                     tool_choice="auto",
-                    max_tokens=2048,
+                    max_tokens=800,
                 )
                 msg = response.choices[0].message
 
@@ -374,3 +374,4 @@ class CookAgent:
 
         self._save_message("assistant", response_text, cook_session_id)
         return response_text
+
