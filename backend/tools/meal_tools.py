@@ -79,14 +79,15 @@ def _build_constraint_summary(household_members: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
 def generate_meal_plan(household_members: List[Dict], special_requests: str = "") -> Dict:
     """Generate a 7-day meal plan using the LLM. Raises on failure — no silent fallback."""
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("GROQ_API_KEY not set. Cannot generate a meal plan.")
+        raise RuntimeError("GEMINI_API_KEY not set. Cannot generate a meal plan.")
 
     constraint_summary = _build_constraint_summary(household_members)
     special_note = f"\nSpecial requests: {special_requests}" if special_requests else ""
@@ -95,14 +96,14 @@ def generate_meal_plan(household_members: List[Dict], special_requests: str = ""
 Rules: safe for all members; no allergens; vegetarian alternative when meat is served (note inline); soft/low-sugar for diabetic members; varied realistic home cooking.
 Reply ONLY with JSON: {{"Monday":{{"breakfast":"...","lunch":"...","dinner":"..."}},"Tuesday":{{...}},"Wednesday":{{...}},"Thursday":{{...}},"Friday":{{...}},"Saturday":{{...}},"Sunday":{{...}}}}"""
 
-    from groq import Groq
-    client = Groq(api_key=api_key)
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key, base_url=GEMINI_BASE_URL)
     last_error = None
     for attempt in range(2):
         try:
             t0 = time.time()
             response = client.chat.completions.create(
-                model=GROQ_MODEL,
+                model=GEMINI_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
                     {"role": "user", "content": prompt}

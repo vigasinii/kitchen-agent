@@ -2,4 +2,5 @@ fastapi
 uvicorn
 sqlmodel
 groq>=1.0.0
+openai>=1.0.0
 python-dotenv

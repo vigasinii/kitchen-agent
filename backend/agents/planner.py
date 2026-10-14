@@ -9,7 +9,8 @@ from models import HouseholdMember, MealPlan, ConversationMessage
 from tools.meal_tools import generate_meal_plan, check_ingredient_safety, validate_meal_against_household
 from tools.grocery import consolidate_grocery_list
 
-GROQ_MODEL = "qwen/qwen3.8-27b"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 PLANNER_TOOLS = [
     {
@@ -83,10 +84,10 @@ MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "5"))
 class PlannerAgent:
     def __init__(self, db_session: Session):
         self.session = db_session
-        self.api_key = os.getenv("GROQ_API_KEY")
+        self.api_key = os.getenv("GEMINI_API_KEY")
         if self.api_key:
-            from groq import Groq
-            self.client = Groq(api_key=self.api_key)
+            from openai import OpenAI
+            self.client = OpenAI(api_key=self.api_key, base_url=GEMINI_BASE_URL)
         else:
             self.client = None
 
@@ -228,7 +229,7 @@ class PlannerAgent:
 
     def chat(self, user_message: str) -> str:
         if not self.client:
-            return "I need a GROQ_API_KEY set in your .env file to work. Get one free at console.groq.com."
+            return "I need a GEMINI_API_KEY set in your environment to work."
 
         self._save_message("user", user_message)
         history = self._get_conversation_history()
@@ -237,26 +238,26 @@ class PlannerAgent:
         messages = [{"role": "system", "content": system_prompt}] + history
         response_text = ""
 
-        def groq_call():
+        def gemini_call():
             for attempt in range(2):
                 try:
                     return self.client.chat.completions.create(
-                        model=GROQ_MODEL,
+                        model=GEMINI_MODEL,
                         messages=messages,
                         tools=PLANNER_TOOLS,
                         tool_choice="auto",
-                        max_tokens=400,
-                        timeout=15,
+                        max_tokens=800,
+                        timeout=30,
                     )
                 except Exception as e:
                     if "429" in str(e) and attempt == 0:
-                        time.sleep(1)
+                        time.sleep(2)
                     else:
                         raise
 
         try:
             for round_num in range(MAX_TOOL_ROUNDS):
-                response = groq_call()
+                response = gemini_call()
                 msg = response.choices[0].message
 
                 if msg.tool_calls:
