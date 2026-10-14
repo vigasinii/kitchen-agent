@@ -9,7 +9,7 @@ from models import HouseholdMember, MealPlan, ConversationMessage
 from tools.meal_tools import generate_meal_plan, check_ingredient_safety, validate_meal_against_household
 from tools.grocery import consolidate_grocery_list
 
-GROQ_MODEL = "qwen/qwen3.8-27b"
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 PLANNER_TOOLS = [
     {
@@ -86,7 +86,7 @@ class PlannerAgent:
             .where(ConversationMessage.session_type == "planner")
             .order_by(ConversationMessage.timestamp)
         ).all()
-        return [{"role": m.role, "content": m.content} for m in messages[-20:]]
+        return [{"role": m.role, "content": m.content} for m in messages[-8:]]
 
     def _save_message(self, role: str, content: str):
         msg = ConversationMessage(
@@ -214,6 +214,7 @@ class PlannerAgent:
                             tools=PLANNER_TOOLS,
                             tool_choice="auto",
                             max_tokens=400,
+                            timeout=30,
                         )
                         break
                     except Exception as e:

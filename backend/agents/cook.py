@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from models import HouseholdMember, MealPlan, CookSession, ConversationMessage, ApprovalRequest
 from tools.meal_tools import check_ingredient_safety
 
-GROQ_MODEL = "qwen/qwen3.8-27b"
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 COOK_TOOLS = [
     {
@@ -154,7 +154,7 @@ class CookAgent:
             .where(ConversationMessage.session_type == session_tag)
             .order_by(ConversationMessage.timestamp)
         ).all()
-        return [{"role": m.role, "content": m.content} for m in messages[-20:]]
+        return [{"role": m.role, "content": m.content} for m in messages[-8:]]
 
     def _save_message(self, role: str, content: str, cook_session_id: int):
         session_tag = f"cook_{cook_session_id}"
@@ -331,6 +331,7 @@ class CookAgent:
                             tools=COOK_TOOLS,
                             tool_choice="auto",
                             max_tokens=500,
+                            timeout=30,
                         )
                         break
                     except Exception as e:
