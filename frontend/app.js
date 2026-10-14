@@ -115,6 +115,8 @@ function useVoice(onResult) {
   const [voiceState, setVoiceState] = useState('idle'); // idle | listening | processing
   const recognitionRef = useRef(null);
 
+  const transcriptRef = useRef('');
+
   const startRecording = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -122,27 +124,44 @@ function useVoice(onResult) {
       return;
     }
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.lang = "en-US";
+    transcriptRef.current = '';
 
     recognition.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      setVoiceState('processing');
-      onResult(transcript);
-      setTimeout(() => setVoiceState('idle'), 400);
+      let final = '';
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) final += e.results[i][0].transcript + ' ';
+      }
+      if (final.trim()) {
+        transcriptRef.current = final.trim();
+        onResult(transcriptRef.current);
+      }
     };
 
-    recognition.onerror = () => setVoiceState('idle');
-    recognition.onend = () => setVoiceState(s => s === 'listening' ? 'idle' : s);
+    recognition.onerror = (e) => {
+      if (e.error !== 'no-speech') setVoiceState('idle');
+    };
+    recognition.onend = () => {
+      // Restart if still in listening state (handles browser auto-stop on pause)
+      if (recognitionRef.current && recognitionRef.current._active) {
+        try { recognition.start(); } catch {}
+      }
+    };
 
     recognitionRef.current = recognition;
+    recognitionRef.current._active = true;
     recognition.start();
     setVoiceState('listening');
   }, [onResult]);
 
   const stopRecording = useCallback(() => {
-    if (recognitionRef.current) recognitionRef.current.stop();
+    if (recognitionRef.current) {
+      recognitionRef.current._active = false;
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
     setVoiceState('idle');
   }, []);
 
