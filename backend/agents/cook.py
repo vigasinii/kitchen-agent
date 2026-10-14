@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from models import HouseholdMember, MealPlan, CookSession, ConversationMessage, ApprovalRequest
 from tools.meal_tools import check_ingredient_safety
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 COOK_TOOLS = [

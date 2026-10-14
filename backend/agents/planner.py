@@ -9,7 +9,7 @@ from models import HouseholdMember, MealPlan, ConversationMessage
 from tools.meal_tools import generate_meal_plan, check_ingredient_safety, validate_meal_against_household
 from tools.grocery import consolidate_grocery_list
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 PLANNER_TOOLS = [
