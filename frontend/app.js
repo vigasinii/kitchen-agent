@@ -362,7 +362,11 @@ function Sidebar({ activeScreen, onNavigate }) {
       </nav>
 
       <div className="sidebar-footer">
-        <button className="nav-item" style={{ width: '100%' }}>
+        <button
+          className={`nav-item ${activeScreen === 'settings' ? 'active' : ''}`}
+          style={{ width: '100%' }}
+          onClick={() => onNavigate('settings')}
+        >
           <Icon name="Settings" size={16} strokeWidth={1.75} />
           Settings
         </button>
@@ -1290,16 +1294,53 @@ function GroceryScreen() {
       {/* Order confirmation modal */}
       {orderResult && (
         <div className="modal-overlay" onClick={() => setOrderResult(null)}>
-          <div className="modal-box" onClick={e => e.stopPropagation()}>
-            <div className="modal-icon">
-              <Icon name="CheckCircle" size={24} />
+          <div className="modal-box" onClick={e => e.stopPropagation()} style={{maxWidth: 420}}>
+            {/* Header */}
+            <div style={{background:'#0d7a4e',borderRadius:'12px 12px 0 0',margin:'-28px -28px 20px -28px',padding:'24px 28px',color:'#fff',textAlign:'center'}}>
+              <div style={{width:48,height:48,borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px'}}>
+                <Icon name="CheckCircle" size={26} />
+              </div>
+              <div style={{fontWeight:700,fontSize:'1.15rem',letterSpacing:'.01em'}}>Order Confirmed!</div>
+              <div style={{fontSize:'.82rem',opacity:.85,marginTop:3}}>Your groceries are on the way</div>
             </div>
-            <div className="modal-title">Order Confirmed</div>
-            <div className="modal-body">{orderResult.message}</div>
-            {orderResult.order_id && (
-              <div className="modal-order-id">{orderResult.order_id}</div>
-            )}
-            <button className="btn btn-primary" onClick={() => setOrderResult(null)}>
+
+            {/* Order ID pill */}
+            <div style={{textAlign:'center',marginBottom:18}}>
+              <span style={{background:'#f0faf5',border:'1px solid #b7e4ce',borderRadius:8,padding:'5px 16px',fontFamily:'monospace',fontWeight:700,fontSize:'.9rem',color:'#0d7a4e',letterSpacing:'.05em'}}>
+                {orderResult.order_id}
+              </span>
+            </div>
+
+            {/* Stats grid */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:18}}>
+              {[
+                {label:'Items', value: orderResult.item_count},
+                {label:'Total', value: orderResult.total_cost},
+                {label:'ETA', value: orderResult.estimated_delivery},
+              ].map(s => (
+                <div key={s.label} style={{background:'#f7f9f8',borderRadius:10,padding:'10px 8px',textAlign:'center'}}>
+                  <div style={{fontWeight:700,fontSize:'1rem',color:'#111'}}>{s.value}</div>
+                  <div style={{fontSize:'.72rem',color:'#888',marginTop:2}}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Delivery status bar */}
+            <div style={{marginBottom:20}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'.73rem',color:'#888',marginBottom:5}}>
+                <span>Order Placed</span><span>Picking</span><span>On the way</span><span>Delivered</span>
+              </div>
+              <div style={{height:5,borderRadius:3,background:'#e5e7eb',overflow:'hidden'}}>
+                <div style={{height:'100%',width:'25%',background:'#0d7a4e',borderRadius:3,transition:'width .5s'}} />
+              </div>
+            </div>
+
+            {/* Footer note */}
+            <div style={{fontSize:'.78rem',color:'#888',textAlign:'center',marginBottom:16}}>
+              You will receive an SMS update when your order is out for delivery.
+            </div>
+
+            <button className="btn btn-primary" style={{width:'100%'}} onClick={() => setOrderResult(null)}>
               Close
             </button>
           </div>
@@ -1592,6 +1633,66 @@ function ColdStartBanner() {
   return null;
 }
 
+/* ===================================================================
+   SETTINGS SCREEN
+   =================================================================== */
+function SettingsScreen() {
+  const household = [
+    { name: 'Sarah', role: 'Adult', restrictions: 'Vegetarian', allergies: 'None' },
+    { name: 'Mike',  role: 'Adult', restrictions: 'None',       allergies: 'None' },
+    { name: 'Emma',  role: 'Child', restrictions: 'Kid-friendly', allergies: 'Peanuts (STRICT)' },
+    { name: 'George',role: 'Senior',restrictions: 'Soft foods, low sugar', allergies: 'None' },
+  ];
+  return (
+    <div className="screen-content">
+      <div className="screen-header">
+        <div>
+          <div className="screen-title">Settings</div>
+          <div className="screen-subtitle">Household preferences and configuration</div>
+        </div>
+      </div>
+
+      <div style={{display:'grid',gap:24,maxWidth:700}}>
+        {/* Household members */}
+        <div className="section-block">
+          <div style={{fontWeight:700,fontSize:'.95rem',marginBottom:14,color:'var(--text-primary)'}}>Household Members</div>
+          {household.map(m => (
+            <div key={m.name} style={{display:'flex',alignItems:'center',gap:14,padding:'12px 0',borderBottom:'1px solid var(--border)'}}>
+              <div style={{width:38,height:38,borderRadius:'50%',background:'var(--primary-light)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,color:'var(--primary)',fontSize:'.9rem',flexShrink:0}}>
+                {m.name[0]}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,fontSize:'.88rem'}}>{m.name} <span style={{fontWeight:400,color:'var(--text-muted)',fontSize:'.8rem'}}>({m.role})</span></div>
+                <div style={{fontSize:'.78rem',color:'var(--text-muted)',marginTop:2}}>
+                  {m.restrictions !== 'None' && <span style={{marginRight:10}}>Diet: {m.restrictions}</span>}
+                  {m.allergies !== 'None' && <span style={{color:'#dc2626',fontWeight:600}}>Allergy: {m.allergies}</span>}
+                  {m.restrictions === 'None' && m.allergies === 'None' && <span>No restrictions</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* App info */}
+        <div className="section-block">
+          <div style={{fontWeight:700,fontSize:'.95rem',marginBottom:14,color:'var(--text-primary)'}}>About</div>
+          {[
+            ['Version', '1.0.0'],
+            ['Backend', 'FastAPI + SQLite on Render'],
+            ['AI Model', 'Qwen 3 8B via Groq'],
+            ['Voice', 'Web Speech API (browser)'],
+          ].map(([k,v]) => (
+            <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--border)',fontSize:'.85rem'}}>
+              <span style={{color:'var(--text-muted)'}}>{k}</span>
+              <span style={{fontWeight:500}}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [activeScreen, setActiveScreen] = useState('overview');
 
@@ -1606,6 +1707,7 @@ function App() {
       case 'grocery':   return <GroceryScreen />;
       case 'household':  return <HouseholdScreen />;
       case 'analytics':  return <AnalyticsScreen />;
+      case 'settings':   return <SettingsScreen />;
       default:           return <OverviewScreen onNavigate={navigate} />;
     }
   };
