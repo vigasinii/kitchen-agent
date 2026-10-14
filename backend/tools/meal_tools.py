@@ -87,29 +87,9 @@ def generate_meal_plan(household_members: List[Dict], special_requests: str = ""
     constraint_summary = _build_constraint_summary(household_members)
     special_note = f"\nSpecial requests: {special_requests}" if special_requests else ""
 
-    prompt = f"""You are a professional meal planner. Generate a 7-day meal plan for this household.
-
-HOUSEHOLD MEMBERS AND CONSTRAINTS:
-{constraint_summary}{special_note}
-
-RULES:
-1. Every meal must be safe for ALL members simultaneously.
-2. Allergies are absolute: never include the allergen or derivatives.
-3. Vegetarian members must have a meat-free option for every meal (or the whole meal is vegetarian).
-4. Diabetic/soft-food members need low-sugar, well-cooked, easily chewed meals.
-5. Meals should be realistic home-cooking, nutritionally balanced, and varied across the week.
-6. When a meal has meat, note a vegetarian alternative inline (e.g. "tofu option for vegetarians").
-
-OUTPUT FORMAT - respond ONLY with valid JSON, no other text:
-{{
-  "Monday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
-  "Tuesday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
-  "Wednesday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
-  "Thursday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
-  "Friday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
-  "Saturday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
-  "Sunday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}}
-}}"""
+    prompt = f"""Generate a 7-day meal plan as JSON. Household: {constraint_summary}{special_note}
+Rules: safe for all members; no allergens; vegetarian alternative when meat is served (note inline); soft/low-sugar for diabetic members; varied realistic home cooking.
+Reply ONLY with JSON: {{"Monday":{{"breakfast":"...","lunch":"...","dinner":"..."}},"Tuesday":{{...}},"Wednesday":{{...}},"Thursday":{{...}},"Friday":{{...}},"Saturday":{{...}},"Sunday":{{...}}}}"""
 
     try:
         from groq import Groq
@@ -120,7 +100,7 @@ OUTPUT FORMAT - respond ONLY with valid JSON, no other text:
                 {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=700,
+            max_tokens=600,
             temperature=0.7,
         )
         raw = response.choices[0].message.content.strip()

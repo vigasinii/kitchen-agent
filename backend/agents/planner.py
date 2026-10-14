@@ -210,7 +210,7 @@ class PlannerAgent:
                     messages=messages,
                     tools=PLANNER_TOOLS,
                     tool_choice="auto",
-                    max_tokens=500,
+                    max_tokens=400,
                 )
                 msg = response.choices[0].message
 
