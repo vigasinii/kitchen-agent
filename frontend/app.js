@@ -1813,7 +1813,7 @@ function SettingsScreen() {
           {[
             ['Version', '1.0.0'],
             ['Backend', 'FastAPI + SQLite on Render'],
-            ['AI Model', 'Gemini 1.5 Flash'],
+            ['AI Model', 'Gemini 3.8 Flash'],
             ['Voice', 'Orpheus (edge-tts fallback)'],
           ].map(([k,v]) => (
             <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--border)',fontSize:'.85rem'}}>
