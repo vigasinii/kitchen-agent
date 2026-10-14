@@ -259,7 +259,8 @@ function VoiceComposer({ onSend, loading, placeholder, chips }) {
   };
 
   const handleChip = (chip) => {
-    onSend(chip);
+    const msg = typeof chip === 'object' ? chip.message : chip;
+    onSend(msg);
   };
 
   // Auto-resize textarea
@@ -274,11 +275,14 @@ function VoiceComposer({ onSend, loading, placeholder, chips }) {
     <div>
       {chips && chips.length > 0 && (
         <div className="chips-row">
-          {chips.map(chip => (
-            <button key={chip} className="chip" onClick={() => handleChip(chip)}>
-              {chip}
-            </button>
-          ))}
+          {chips.map(chip => {
+            const label = typeof chip === 'object' ? chip.label : chip;
+            return (
+              <button key={label} className="chip" onClick={() => handleChip(chip)}>
+                {label}
+              </button>
+            );
+          })}
         </div>
       )}
       <div className="composer-area">
@@ -568,10 +572,10 @@ function OverviewScreen({ onNavigate }) {
    PLANNER SCREEN
    =================================================================== */
 const PLANNER_CHIPS = [
-  'Plan next week',
-  'Make dinners lighter',
-  'Check restrictions',
-  'Replace a meal',
+  { label: 'Plan next week', message: 'Plan next week' },
+  { label: 'Make dinners lighter', message: 'Make dinners lighter' },
+  { label: 'Check restrictions', message: 'Show the current meal plan and check it for dietary restriction or allergy violations. Do NOT create a new plan.' },
+  { label: 'Replace a meal', message: 'I want to replace a meal in the current plan. Ask me which day and meal type.' },
 ];
 
 function PlannerScreen() {
