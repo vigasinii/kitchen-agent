@@ -303,7 +303,7 @@ def chat_cook(request: CookChatRequest, session: Session = Depends(get_session))
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "tara"  # Orpheus voices: tara, leah, jess, leo, dan, mia, zac, zoe
+    voice: str = "hannah"  # Orpheus voices: autumn, diana, hannah, austin, daniel, troy
 
 
 @app.post("/tts")
@@ -346,14 +346,12 @@ async def text_to_speech(request: TTSRequest):
         import edge_tts, asyncio
         # Map Orpheus voice names to Edge neural voices
         voice_map = {
-            "tara": "en-US-JennyNeural",
-            "leah": "en-US-AriaNeural",
-            "jess": "en-US-MichelleNeural",
-            "leo":  "en-US-GuyNeural",
-            "dan":  "en-US-ChristopherNeural",
-            "mia":  "en-US-MonicaNeural",
-            "zac":  "en-US-EricNeural",
-            "zoe":  "en-US-JennyNeural",
+            "hannah":  "en-US-JennyNeural",
+            "diana":   "en-US-AriaNeural",
+            "autumn":  "en-US-MichelleNeural",
+            "austin":  "en-US-GuyNeural",
+            "daniel":  "en-US-ChristopherNeural",
+            "troy":    "en-US-EricNeural",
         }
         edge_voice = voice_map.get(request.voice, "en-US-JennyNeural")
         print(f"[TTS] edge-tts voice: {edge_voice}")

@@ -202,7 +202,7 @@ async function speak(text) {
     const res = await fetch(`${API}/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: clean, voice: 'tara' }),
+      body: JSON.stringify({ text: clean, voice: 'hannah' }),
     });
     if (!res.ok) throw new Error('TTS failed');
     const blob = await res.blob();
