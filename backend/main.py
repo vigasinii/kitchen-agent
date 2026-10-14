@@ -296,6 +296,48 @@ def chat_cook(request: CookChatRequest, session: Session = Depends(get_session))
     return {"response": response}
 
 
+# ---- TTS Endpoint ----
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "tara"  # Orpheus voices: tara, leah, jess, leo, dan, mia, zac, zoe
+
+
+@app.post("/tts")
+def text_to_speech(request: TTSRequest):
+    from fastapi.responses import Response
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="GROQ_API_KEY not set")
+
+    # Strip markdown for cleaner speech
+    import re
+    text = request.text
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)   # bold
+    text = re.sub(r'\*(.+?)\*', r'\1', text)         # italic
+    text = re.sub(r'#{1,6}\s+', '', text)            # headers
+    text = re.sub(r'^\s*[\-\*]\s+', '', text, flags=re.MULTILINE)  # bullets
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)   # numbered lists
+    text = text.strip()
+    # Truncate to 500 chars to stay within token limits
+    if len(text) > 500:
+        text = text[:497] + "..."
+
+    try:
+        from groq import Groq
+        client = Groq(api_key=api_key)
+        response = client.audio.speech.create(
+            model="canopylabs/orpheus-v1-english",
+            voice=request.voice,
+            input=text,
+            response_format="wav",
+        )
+        audio_bytes = response.read()
+        return Response(content=audio_bytes, media_type="audio/wav")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
+
+
 # ---- Conversation History ----
 
 @app.get("/conversations/{session_type}")

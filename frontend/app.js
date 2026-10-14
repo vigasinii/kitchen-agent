@@ -154,13 +154,32 @@ function useVoice(onResult) {
   return { voiceState, toggle };
 }
 
-function speak(text) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 1.0;
-  utterance.pitch = 1.05;
-  window.speechSynthesis.speak(utterance);
+let currentAudio = null;
+
+async function speak(text) {
+  // Stop any current playback
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+  try {
+    const res = await fetch(`${API}/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice: 'tara' }),
+    });
+    if (!res.ok) throw new Error('TTS failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    currentAudio = new Audio(url);
+    currentAudio.play();
+    currentAudio.onended = () => URL.revokeObjectURL(url);
+  } catch {
+    // Fallback to browser TTS if backend unavailable
+    if (!window.speechSynthesis) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    window.speechSynthesis.speak(utterance);
+  }
 }
 
 /* ===================================================================
