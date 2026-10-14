@@ -9,7 +9,7 @@ from models import HouseholdMember, MealPlan, ConversationMessage
 from tools.meal_tools import generate_meal_plan, check_ingredient_safety, validate_meal_against_household
 from tools.grocery import consolidate_grocery_list
 
-GROQ_MODEL = "llama-3.1-8b-instant"
+GROQ_MODEL = "openai/gpt-oss-20b"
 
 PLANNER_TOOLS = [
     {
