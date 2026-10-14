@@ -704,11 +704,28 @@ function PlannerScreen() {
     }
   };
 
+  const clearChat = async () => {
+    try {
+      await axios.delete(`${API}/conversations/planner`);
+      setMessages([]);
+      addToast('Chat cleared', 'success');
+    } catch {
+      addToast('Failed to clear chat', 'error');
+    }
+  };
+
   return (
     <div className="chat-screen">
-      <div className="chat-screen-header" style={{ padding: '24px 40px 18px' }}>
-        <div className="chat-screen-title">Kitchen Planner</div>
-        <div className="chat-screen-subtitle">Ready to plan your week</div>
+      <div className="chat-screen-header" style={{ padding: '24px 40px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div className="chat-screen-title">Kitchen Planner</div>
+          <div className="chat-screen-subtitle">Ready to plan your week</div>
+        </div>
+        {messages.length > 0 && (
+          <button className="clear-chat-btn" onClick={clearChat} title="Clear conversation">
+            <Icon name="Trash2" size={14} /> Clear chat
+          </button>
+        )}
       </div>
 
       <div className="messages-area">

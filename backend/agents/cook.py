@@ -114,7 +114,7 @@ COOK_TOOLS = [
 ]
 
 GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
-MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "3"))
+MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "5"))
 
 SYSTEM_PROMPT = """You are Arjun, the household's cook guide. You have years of kitchen experience and you're calm under pressure. You've cooked for this family enough times that you know their quirks. You keep things moving.
 

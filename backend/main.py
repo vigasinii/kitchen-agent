@@ -363,6 +363,17 @@ def get_conversations(session_type: str, session: Session = Depends(get_session)
         for m in messages
     ]
 
+@app.delete("/conversations/{session_type}")
+def clear_conversations(session_type: str, session: Session = Depends(get_session)):
+    messages = session.exec(
+        select(ConversationMessage)
+        .where(ConversationMessage.session_type == session_type)
+    ).all()
+    for m in messages:
+        session.delete(m)
+    session.commit()
+    return {"cleared": len(messages)}
+
 
 # ---- Cook Session Completion ----
 

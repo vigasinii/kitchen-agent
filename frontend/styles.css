@@ -974,6 +974,26 @@ svg.icon {
   100% { box-shadow: 0 0 0 0 rgba(35, 76, 60, 0); }
 }
 
+.clear-chat-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.clear-chat-btn:hover {
+  color: #c0392b;
+  border-color: #c0392b;
+  background: #fff0f0;
+}
+
 .stop-voice-btn {
   width: 36px;
   height: 36px;

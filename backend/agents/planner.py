@@ -77,7 +77,7 @@ Hard rules: every meal safe for ALL members. Strict allergens never included. Ve
 Use tools to fetch and update plans. No emojis. No em dashes. Numbered lists for steps, bullets for options."""
 
 GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
-MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "3"))
+MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "5"))
 
 
 class PlannerAgent:
