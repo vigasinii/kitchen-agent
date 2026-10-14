@@ -533,108 +533,101 @@ function OverviewScreen({ onNavigate }) {
     return sum + Object.values(day).filter(Boolean).length;
   }, 0) : 0;
 
+  const MEAL_ICONS = { breakfast: '🌅', lunch: '☀️', dinner: '🌙' };
+  const MEMBER_COLORS = ['#234c3c', '#4a7c59', '#7fb069', '#b5d99c'];
+
   if (loading) {
     return (
-      <div className="screen">
-        <div className="skeleton skeleton-title" style={{ marginBottom: 24, height: 32, width: '40%' }} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 32 }}>
-          {[0,1,2].map(i => <div key={i} className="skeleton skeleton-card" />)}
+      <div className="screen overview-screen">
+        <div className="overview-hero skeleton" style={{ height: 120, borderRadius: 16, marginBottom: 28 }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 28 }}>
+          {[0,1,2].map(i => <div key={i} className="skeleton" style={{ height: 110, borderRadius: 14 }} />)}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-          {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 72 }} />)}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+          {[0,1].map(i => <div key={i} className="skeleton" style={{ height: 80, borderRadius: 14 }} />)}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="screen">
-      {/* Greeting */}
-      <div className="overview-greeting">
-        <div className="greeting-time">{getGreeting()}</div>
-        <div className="greeting-sub">Here is what is happening in your kitchen today.</div>
-        <div className="greeting-date">{getDateString()}</div>
+    <div className="screen overview-screen">
+
+      {/* Hero */}
+      <div className="overview-hero">
+        <div className="overview-hero-left">
+          <div className="overview-greeting-line">{getGreeting()}</div>
+          <div className="overview-date-line">{getDateString()}</div>
+          <div className="overview-members-row">
+            {members.map((m, i) => (
+              <div key={m.id} className="member-avatar" style={{ background: MEMBER_COLORS[i % MEMBER_COLORS.length] }} title={m.name}>
+                {m.name[0]}
+              </div>
+            ))}
+            <span className="overview-members-label">{members.map(m => m.name.split(' ')[0]).join(', ')}</span>
+          </div>
+        </div>
+        <div className="overview-hero-right">
+          <div className="overview-plan-badge" style={{ background: activePlan?.status === 'approved' ? '#e8f5e9' : '#fff8e1', color: activePlan?.status === 'approved' ? '#2e7d32' : '#f57f17' }}>
+            <Icon name={activePlan?.status === 'approved' ? 'CheckCircle' : 'Clock'} size={13} />
+            {activePlan ? (activePlan.status === 'approved' ? 'Plan approved' : 'Awaiting approval') : 'No active plan'}
+          </div>
+          <div className="overview-total-meals">{totalMeals} <span>meals this week</span></div>
+        </div>
       </div>
 
-      {/* Today in the Kitchen */}
-      <div className="section-label">Today in the Kitchen</div>
-      <div className="today-meals">
+      {/* Today's meals */}
+      <div className="section-label">Today — {today}</div>
+      <div className="overview-today-grid">
         {['breakfast', 'lunch', 'dinner'].map(mealType => {
           const name = todayMeals[mealType];
           return (
-            <div className="meal-today-card" key={mealType}>
-              <div className="meal-today-type">{mealType}</div>
-              <div className={`meal-today-name ${!name ? 'empty' : ''}`}>
-                {name || 'Not planned'}
-              </div>
-              {name && (
-                <div>
-                  <div className="dietary-tags">
-                    {members.flatMap(m => m.dietary_restrictions || []).slice(0, 2).map((tag, i) => (
-                      <span key={i} className="dietary-tag">{tag}</span>
-                    ))}
-                  </div>
-                  <span className="meal-status-badge planned">
-                    <Icon name="Check" size={11} />
-                    Planned
-                  </span>
-                </div>
-              )}
+            <div className={`overview-meal-card ${!name ? 'empty' : ''}`} key={mealType} onClick={() => onNavigate('planner')}>
+              <div className="overview-meal-icon">{MEAL_ICONS[mealType]}</div>
+              <div className="overview-meal-type">{mealType}</div>
+              <div className="overview-meal-name">{name || 'Not planned yet'}</div>
+              {name && <div className="overview-meal-cta">Cook this <Icon name="ChevronRight" size={11} /></div>}
             </div>
           );
         })}
       </div>
 
-      {/* Stats */}
-      <div className="section-label">Status</div>
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-label">Meals Planned</div>
-          <div className="stat-value">{totalMeals}</div>
-          <div className="stat-sub">This week</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Week Status</div>
-          <div className="stat-value" style={{ fontSize: 15, marginTop: 4, textTransform: 'capitalize' }}>
-            {activePlan?.status || 'No plan'}
-          </div>
-          <div className="stat-sub">{activePlan?.week_start || 'No plan active'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Grocery Status</div>
-          <div className="stat-value" style={{ fontSize: 15, marginTop: 4, textTransform: 'capitalize' }}>
-            {groceryStatus || 'Pending'}
-          </div>
-          <div className="stat-sub">
-            {groceryStatus === 'ordered' ? 'Order placed' : 'Tap to generate'}
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Members</div>
-          <div className="stat-value">{members.length}</div>
-          <div className="stat-sub">Household members</div>
-        </div>
+      {/* Quick actions */}
+      <div className="section-label">Quick actions</div>
+      <div className="overview-actions-grid">
+        <button className="overview-action-card" onClick={() => onNavigate('planner')}>
+          <div className="overview-action-icon" style={{ background: '#e8f0ec' }}><Icon name="MessageSquare" size={20} color="#234c3c" /></div>
+          <div className="overview-action-label">Chat with Riya</div>
+          <div className="overview-action-sub">Plan or adjust meals</div>
+        </button>
+        <button className="overview-action-card" onClick={() => onNavigate('cook')}>
+          <div className="overview-action-icon" style={{ background: '#fef3e2' }}><Icon name="ChefHat" size={20} color="#e65100" /></div>
+          <div className="overview-action-label">Start Cooking</div>
+          <div className="overview-action-sub">Step-by-step with Arjun</div>
+        </button>
+        <button className="overview-action-card" onClick={() => onNavigate('grocery')}>
+          <div className="overview-action-icon" style={{ background: '#e3f2fd' }}><Icon name="ShoppingCart" size={20} color="#1565c0" /></div>
+          <div className="overview-action-label">Grocery List</div>
+          <div className="overview-action-sub">{groceryStatus === 'ordered' ? 'Order placed' : 'View or order'}</div>
+        </button>
+        <button className="overview-action-card" onClick={() => onNavigate('mealplan')}>
+          <div className="overview-action-icon" style={{ background: '#f3e5f5' }}><Icon name="Calendar" size={20} color="#6a1b9a" /></div>
+          <div className="overview-action-label">Weekly Plan</div>
+          <div className="overview-action-sub">{activePlan?.status === 'approved' ? 'Approved' : 'Review plan'}</div>
+        </button>
       </div>
 
-      {/* Needs Attention */}
+      {/* Approve nudge */}
       {activePlan && activePlan.status !== 'approved' && (
-        <div>
-          <div className="section-label">Needs Attention</div>
-          <div className="attention-card">
-            <div className="attention-icon">
-              <Icon name="AlertTriangle" size={18} />
-            </div>
-            <div className="attention-text">
-              <div className="attention-title">Review and approve this week's meal plan</div>
-              <div className="attention-desc">
-                The plan for the week of {activePlan.week_start} is ready and waiting for your approval.
-              </div>
-            </div>
-            <button className="btn btn-primary btn-sm" onClick={handleApprove}>
-              <Icon name="Check" size={13} />
-              Approve Plan
-            </button>
+        <div className="attention-card" style={{ marginTop: 20 }}>
+          <div className="attention-icon"><Icon name="AlertTriangle" size={18} /></div>
+          <div className="attention-text">
+            <div className="attention-title">This week's plan needs your approval</div>
+            <div className="attention-desc">Week of {activePlan.week_start}</div>
           </div>
+          <button className="btn btn-primary btn-sm" onClick={handleApprove}>
+            <Icon name="Check" size={13} /> Approve
+          </button>
         </div>
       )}
     </div>
