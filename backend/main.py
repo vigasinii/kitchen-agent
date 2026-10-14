@@ -561,39 +561,87 @@ def decide_approval(approval_id: int, body: ApprovalDecideBody, session: Session
     if body.decision not in ("approve", "reject"):
         raise HTTPException(status_code=400, detail="decision must be 'approve' or 'reject'")
 
-    approval.status = "approved" if body.decision == "approve" else "rejected"
-    approval.decided_by = body.decided_by or "household"
-    approval.decided_at = datetime.utcnow().isoformat()
-    approval.decision_reason = body.reason or ""
-    session.add(approval)
-    session.commit()
-
     grocery_regenerated = False
 
-    # If approved and proposed_change looks like a meal swap, update the plan
-    if approval.status == "approved" and approval.day and approval.meal_type:
-        plan = session.get(MealPlan, approval.meal_plan_id)
-        if plan:
-            meals = json.loads(plan.meals)
-            day = approval.day
-            meal_type = approval.meal_type
-            if day in meals and meal_type in meals[day] and approval.proposed_change:
-                meals[day][meal_type] = approval.proposed_change
-                plan.meals = json.dumps(meals)
-                session.add(plan)
-                session.commit()
+    if body.decision == "approve" and approval.day and approval.meal_type and approval.proposed_change:
+        # Safety validation before applying any meal substitution
+        if not approval.meal_plan_id:
+            raise HTTPException(status_code=400, detail="Cannot apply change: meal_plan_id not set on this approval")
 
-                # Regenerate grocery list
-                existing_grocery = session.exec(
-                    select(GroceryList).where(GroceryList.meal_plan_id == approval.meal_plan_id)
-                ).first()
-                if existing_grocery:
-                    items = consolidate_grocery_list(meals)
-                    existing_grocery.items = json.dumps(items)
-                    existing_grocery.status = "pending"
-                    session.add(existing_grocery)
-                    session.commit()
-                    grocery_regenerated = True
+        members_raw = session.exec(select(HouseholdMember)).all()
+        member_data = [
+            {
+                "name": m.name,
+                "dietary_restrictions": json.loads(m.dietary_restrictions),
+                "allergies": json.loads(m.allergies),
+                "preferences": json.loads(m.preferences),
+            }
+            for m in members_raw
+        ]
+
+        from tools.meal_tools import validate_meal_against_household
+        safety = validate_meal_against_household(approval.proposed_change, member_data)
+        if not safety["safe"]:
+            violation_summary = "; ".join(
+                f"{v['member']} - {v.get('allergen', v.get('restriction', 'unknown'))} ({v['severity']})"
+                for v in safety["violations"]
+            )
+            approval.status = "rejected"
+            approval.decided_by = body.decided_by or "household"
+            approval.decided_at = datetime.utcnow().isoformat()
+            approval.decision_reason = f"Safety validation failed: {violation_summary}"
+            session.add(approval)
+            session.commit()
+            session.refresh(approval)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Proposed change failed safety validation and was auto-rejected",
+                    "violations": safety["violations"],
+                    "decision_reason": approval.decision_reason,
+                    "approval_id": approval.id,
+                    "status": "rejected"
+                }
+            )
+
+    approved_as = "approved" if body.decision == "approve" else "rejected"
+    try:
+        approval.status = approved_as
+        approval.decided_by = body.decided_by or "household"
+        approval.decided_at = datetime.utcnow().isoformat()
+        approval.decision_reason = body.reason or ""
+        session.add(approval)
+
+        # If approved and proposed_change looks like a meal swap, update the plan
+        if approved_as == "approved" and approval.day and approval.meal_type and approval.proposed_change:
+            if not approval.meal_plan_id:
+                raise HTTPException(status_code=400, detail="Cannot apply change: meal_plan_id not set")
+            plan = session.get(MealPlan, approval.meal_plan_id)
+            if plan:
+                meals = json.loads(plan.meals)
+                day = approval.day
+                meal_type = approval.meal_type
+                if day in meals and meal_type in meals[day]:
+                    meals[day][meal_type] = approval.proposed_change
+                    plan.meals = json.dumps(meals)
+                    session.add(plan)
+
+                    # Regenerate grocery list
+                    existing_grocery = session.exec(
+                        select(GroceryList).where(GroceryList.meal_plan_id == approval.meal_plan_id)
+                    ).first()
+                    if existing_grocery:
+                        items = consolidate_grocery_list(meals)
+                        existing_grocery.items = json.dumps(items)
+                        existing_grocery.status = "pending"
+                        session.add(existing_grocery)
+                        grocery_regenerated = True
+
+        session.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to apply approval decision: {str(e)}")
 
     session.refresh(approval)
     return {

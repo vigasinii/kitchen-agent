@@ -1530,6 +1530,68 @@ function AnalyticsScreen() {
   );
 }
 
+/* ===================================================================
+   COLD START BANNER
+   Render free tier spins down after inactivity. First request after
+   that takes 30-60 seconds. This banner appears only on production
+   (non-localhost) when the backend takes more than 3 seconds to respond.
+   =================================================================== */
+function ColdStartBanner() {
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const [state, setState] = useState('checking'); // checking | slow | ready | error
+
+  useEffect(() => {
+    if (isLocal) { setState('ready'); return; }
+
+    const slowTimer = setTimeout(() => setState('slow'), 3000);
+    const start = Date.now();
+
+    axios.get(`${API}/household`, { timeout: 90000 })
+      .then(() => {
+        clearTimeout(slowTimer);
+        setState('ready');
+      })
+      .catch(() => {
+        clearTimeout(slowTimer);
+        setState('error');
+      });
+
+    return () => clearTimeout(slowTimer);
+  }, []);
+
+  if (isLocal || state === 'ready') return null;
+
+  if (state === 'slow') {
+    return (
+      <div className="cold-start-banner cold-start-slow">
+        <div className="cold-start-inner">
+          <span className="cold-start-spinner" />
+          <div>
+            <strong>Backend is waking up</strong>
+            <span>The server goes to sleep after inactivity (Render free tier). This takes 30 to 60 seconds on first load. Everything will work normally after.</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="cold-start-banner cold-start-error">
+        <div className="cold-start-inner">
+          <Icon name="AlertCircle" size={16} />
+          <div>
+            <strong>Backend unreachable</strong>
+            <span>Could not connect to the server. If this is a fresh deploy, wait 60 seconds and refresh.</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function App() {
   const [activeScreen, setActiveScreen] = useState('overview');
 
@@ -1550,6 +1612,7 @@ function App() {
 
   return (
     <ToastProvider>
+      <ColdStartBanner />
       <div className="app-shell">
         <Sidebar activeScreen={activeScreen} onNavigate={navigate} />
         <main className="main-content">
