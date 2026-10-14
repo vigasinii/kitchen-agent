@@ -79,7 +79,7 @@ def _build_constraint_summary(household_members: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
