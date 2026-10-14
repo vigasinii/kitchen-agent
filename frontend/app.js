@@ -5,7 +5,9 @@
 
 const { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } = React;
 
-const API = "http://localhost:8888";
+const API = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ? "http://localhost:8888"
+  : (window.KITCHEN_API_URL || "");
 
 /* ===================================================================
    INLINE SVG ICONS
