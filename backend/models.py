@@ -11,15 +11,6 @@ class HouseholdMember(SQLModel, table=True):
     allergies: str = Field(default="[]")  # JSON list
     preferences: str = Field(default="[]")  # JSON list
 
-    def get_dietary_restrictions(self):
-        return json.loads(self.dietary_restrictions)
-
-    def get_allergies(self):
-        return json.loads(self.allergies)
-
-    def get_preferences(self):
-        return json.loads(self.preferences)
-
 
 class MealPlan(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -38,16 +29,21 @@ class GroceryList(SQLModel, table=True):
 class CookSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     meal_plan_id: int = Field(foreign_key="mealplan.id")
-    day: str  # e.g., "Monday"
+    day: str
     meal_name: str
     status: str = Field(default="active")  # active/completed/cancelled
     notes: str = Field(default="")
-    substitutions: str = Field(default="[]")  # JSON list
+    substitutions: str = Field(default="[]")  # JSON list of {missing, substitute, approved}
+    # Outcome fields — filled when session is completed
+    outcome_meal: str = Field(default="")       # what was actually cooked (may differ from plan)
+    outcome_notes: str = Field(default="")      # cook's summary of what happened
+    human_interventions: int = Field(default=0) # count of approval requests raised
+    completed_at: str = Field(default="")
 
 
 class ConversationMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    session_type: str  # planner/cook
+    session_type: str  # planner / cook_<id>
     role: str  # user/assistant
     content: str
     timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())

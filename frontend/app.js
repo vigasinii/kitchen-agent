@@ -331,12 +331,13 @@ function VoiceComposer({ onSend, loading, placeholder, chips }) {
    SIDEBAR COMPONENT
    =================================================================== */
 const NAV_ITEMS = [
-  { id: 'overview',  label: 'Overview',         icon: 'LayoutDashboard' },
-  { id: 'planner',   label: 'AI Meal Planner',   icon: 'MessageSquare'  },
-  { id: 'cook',      label: 'Cook Assistant',    icon: 'ChefHat'        },
-  { id: 'mealplan',  label: 'Weekly Meal Plan',  icon: 'CalendarDays'   },
-  { id: 'grocery',   label: 'Grocery List',      icon: 'ShoppingCart'   },
-  { id: 'household', label: 'Household',         icon: 'Users'          },
+  { id: 'overview',   label: 'Overview',          icon: 'LayoutDashboard' },
+  { id: 'planner',    label: 'AI Meal Planner',    icon: 'MessageSquare'  },
+  { id: 'cook',       label: 'Cook Assistant',     icon: 'ChefHat'        },
+  { id: 'mealplan',   label: 'Weekly Meal Plan',   icon: 'CalendarDays'   },
+  { id: 'grocery',    label: 'Grocery List',       icon: 'ShoppingCart'   },
+  { id: 'household',  label: 'Household',          icon: 'Users'          },
+  { id: 'analytics',  label: 'Analytics',          icon: 'BarChart2'      },
 ];
 
 function Sidebar({ activeScreen, onNavigate }) {
@@ -1403,6 +1404,132 @@ function HouseholdScreen() {
 /* ===================================================================
    ROOT APP
    =================================================================== */
+/* ===================================================================
+   ANALYTICS SCREEN
+   Operational metrics: automation rate, friction points, outcomes
+   =================================================================== */
+function AnalyticsScreen() {
+  const [data, setData] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [analyticsRes, sessionsRes] = await Promise.all([
+        axios.get(`${API}/analytics`),
+        axios.get(`${API}/cook-sessions`).catch(() => ({ data: [] })),
+      ]);
+      setData(analyticsRes.data);
+      setSessions(Array.isArray(sessionsRes.data) ? sessionsRes.data : []);
+    } catch {
+      setData(null);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const endSession = async (sessionId, mealName) => {
+    const note = window.prompt(`What was actually cooked? (default: ${mealName})`) ?? mealName;
+    if (note === null) return;
+    const outcome = note.trim() || mealName;
+    const followed = outcome.toLowerCase() === mealName.toLowerCase();
+    try {
+      await axios.post(`${API}/cook-sessions/${sessionId}/complete`, {
+        outcome_meal: outcome,
+        outcome_notes: followed ? "Followed the plan." : `Deviated: cooked "${outcome}" instead of "${mealName}".`,
+        followed_plan: followed,
+      });
+      await load();
+    } catch {
+      alert('Failed to record outcome.');
+    }
+  };
+
+  const metricCard = (label, value, sub) => (
+    <div className="metric-card">
+      <div className="metric-value">{value ?? '--'}</div>
+      <div className="metric-label">{label}</div>
+      {sub && <div className="metric-sub">{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div className="screen-container">
+      <div className="screen-header">
+        <div className="screen-title">Operational Analytics</div>
+        <div className="screen-subtitle">What actually happened in the kitchen vs. what was planned</div>
+      </div>
+
+      {loading ? (
+        <div className="empty-state"><div className="spinner" /><div className="empty-title">Loading...</div></div>
+      ) : !data ? (
+        <div className="empty-state"><div className="empty-title">Could not load analytics</div></div>
+      ) : data.completed_sessions === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon"><Icon name="BarChart2" size={22} /></div>
+          <div className="empty-title">No data yet</div>
+          <div className="empty-sub">Complete a cook session to start tracking operational metrics.</div>
+        </div>
+      ) : (
+        <>
+          <div className="metrics-grid">
+            {metricCard("Automation Rate", `${data.automation_rate_pct}%`, "sessions with zero human intervention")}
+            {metricCard("Sessions Completed", data.completed_sessions)}
+            {metricCard("Avg Interventions / Session", data.avg_human_interventions, "approval requests raised")}
+            {metricCard("Plan Deviations", data.sessions_deviated_from_plan, "meals cooked differently from plan")}
+          </div>
+
+          {data.insight && (
+            <div className="insight-banner">
+              <Icon name="Lightbulb" size={15} />
+              <span>{data.insight}</span>
+            </div>
+          )}
+
+          {data.common_missing_ingredients?.length > 0 && (
+            <div className="section-block">
+              <div className="section-label">Most Common Missing Ingredients</div>
+              <div className="tag-row">
+                {data.common_missing_ingredients.map((item, i) => (
+                  <span key={i} className="allergy-tag">{item.ingredient} ({item.count}x)</span>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>
+                These happen often enough to consider keeping them stocked or updating the default grocery order.
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {sessions.filter(s => s.status === 'active').length > 0 && (
+        <div className="section-block" style={{ marginTop: 24 }}>
+          <div className="section-label">Active Sessions — Record Outcome</div>
+          {sessions.filter(s => s.status === 'active').map(s => (
+            <div key={s.id} className="session-outcome-row">
+              <div>
+                <strong>{s.meal_name}</strong>
+                <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>{s.day}</span>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={() => endSession(s.id, s.meal_name)}>
+                <Icon name="CheckCircle" size={13} /> End Session
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: 16 }}>
+        <button className="btn btn-ghost btn-sm" onClick={load}>
+          <Icon name="RefreshCw" size={13} /> Refresh
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [activeScreen, setActiveScreen] = useState('overview');
 
@@ -1415,8 +1542,9 @@ function App() {
       case 'cook':      return <CookScreen />;
       case 'mealplan':  return <MealPlanScreen />;
       case 'grocery':   return <GroceryScreen />;
-      case 'household': return <HouseholdScreen />;
-      default:          return <OverviewScreen onNavigate={navigate} />;
+      case 'household':  return <HouseholdScreen />;
+      case 'analytics':  return <AnalyticsScreen />;
+      default:           return <OverviewScreen onNavigate={navigate} />;
     }
   };
 

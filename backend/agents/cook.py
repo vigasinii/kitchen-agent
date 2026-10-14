@@ -75,6 +75,23 @@ COOK_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "complete_session",
+            "description": "Mark the cook session as completed and record the outcome: what was actually cooked, any deviations from the plan, and a summary of what required human intervention.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "cook_session_id": {"type": "integer", "description": "Cook session ID"},
+                    "outcome_meal": {"type": "string", "description": "What was actually cooked (may differ from the plan if substitutions were made)"},
+                    "outcome_notes": {"type": "string", "description": "Brief summary: what went smoothly, what went wrong, what needed human decisions"},
+                    "followed_plan": {"type": "boolean", "description": "Whether the original plan was followed without changes"}
+                },
+                "required": ["cook_session_id", "outcome_meal", "outcome_notes", "followed_plan"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "flag_household_approval_needed",
             "description": "Flag that a significant change needs household approval before proceeding.",
             "parameters": {
@@ -98,17 +115,18 @@ The household members are:
 - Emma (child, ~8 years old): SEVERE PEANUT ALLERGY - this is life-threatening, never suggest peanuts
 - George (grandparent): Needs soft, well-cooked foods, mild spice, low sugar (diabetic)
 
-Your role during cooking:
-1. Guide the cook step-by-step through the planned meal
-2. Handle real kitchen problems: missing ingredients, equipment issues, timing
-3. Suggest safe substitutions that respect ALL dietary restrictions
-4. Give practical cooking tips, temperatures, timing
-5. Keep Emma's peanut allergy front of mind for ANY substitution involving nuts
-6. When suggesting changes that significantly deviate from the approved plan, flag for household approval
-7. Be encouraging and calm - kitchens can get stressful!
+Your role during cooking follows a strict workflow:
+1. Guide the cook step-by-step through the planned meal.
+2. Handle real kitchen problems: missing ingredients, equipment issues, timing.
+3. Suggest safe substitutions that respect ALL dietary restrictions.
+4. Give practical cooking tips, temperatures, timing.
+5. Keep Emma's peanut allergy front of mind for ANY substitution involving nuts.
+6. When a change significantly deviates from the approved plan, use flag_household_approval_needed and wait.
+7. Once the meal is done (or cancelled), always use complete_session to record what was actually cooked, what went wrong, and whether the plan was followed. This is critical for the household to learn what to automate.
+8. Be encouraging and calm. Break down complex steps. Suggest shortcuts when time is short.
 
-Speak conversationally and supportively. Break down complex steps.
-If someone says they're running low on time, suggest shortcuts.
+WORKFLOW LOOP (follow this every session):
+Start -> Get planned meal -> Guide cooking -> Handle exceptions -> Flag approvals if needed -> Complete session with outcome
 
 RESPONSE STYLE RULES:
 - Never use emojis. No emoji characters of any kind.
@@ -226,6 +244,35 @@ class CookAgent:
             self.session.add(cook_session)
             self.session.commit()
             return json.dumps({"success": True, "session_id": cook_session_id, "status": cook_session.status})
+
+        elif tool_name == "complete_session":
+            cook_session_id = tool_input.get("cook_session_id")
+            cook_session = self.session.get(CookSession, cook_session_id)
+            if not cook_session:
+                return json.dumps({"error": "Cook session not found"})
+            # Count how many approval requests were raised
+            notes = cook_session.notes or ""
+            interventions = notes.count("[APPROVAL NEEDED]") + notes.count("[APPROVED]") + notes.count("[REJECTED]")
+            cook_session.status = "completed"
+            cook_session.outcome_meal = tool_input.get("outcome_meal", cook_session.meal_name)
+            cook_session.outcome_notes = tool_input.get("outcome_notes", "")
+            cook_session.human_interventions = interventions
+            cook_session.completed_at = datetime.utcnow().isoformat()
+            self.session.add(cook_session)
+            self.session.commit()
+            deviated = not tool_input.get("followed_plan", True)
+            return json.dumps({
+                "success": True,
+                "session_id": cook_session_id,
+                "status": "completed",
+                "followed_plan": tool_input.get("followed_plan"),
+                "outcome_meal": cook_session.outcome_meal,
+                "human_interventions": interventions,
+                "message": "Session recorded. The outcome has been logged for household review." + (
+                    " The plan was followed without changes." if not deviated
+                    else f" Note: the meal deviated from the plan ({cook_session.outcome_meal})."
+                )
+            })
 
         elif tool_name == "flag_household_approval_needed":
             cook_session_id = tool_input.get("cook_session_id")

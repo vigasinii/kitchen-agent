@@ -223,6 +223,25 @@ def order_groceries(meal_plan_id: int, session: Session = Depends(get_session)):
 
 # ---- Cook Session Routes ----
 
+@app.get("/cook-sessions")
+def list_cook_sessions(session: Session = Depends(get_session)):
+    sessions = session.exec(select(CookSession).order_by(CookSession.id.desc())).all()
+    return [
+        {
+            "id": s.id,
+            "meal_plan_id": s.meal_plan_id,
+            "day": s.day,
+            "meal_name": s.meal_name,
+            "status": s.status,
+            "outcome_meal": s.outcome_meal,
+            "outcome_notes": s.outcome_notes,
+            "human_interventions": s.human_interventions,
+            "completed_at": s.completed_at,
+        }
+        for s in sessions
+    ]
+
+
 @app.post("/cook-sessions")
 def start_cook_session(data: CookSessionCreate, session: Session = Depends(get_session)):
     cook_session = CookSession(
@@ -294,6 +313,146 @@ def get_conversations(session_type: str, session: Session = Depends(get_session)
         }
         for m in messages
     ]
+
+
+# ---- Cook Session Completion ----
+
+class SessionOutcome(BaseModel):
+    outcome_meal: str
+    outcome_notes: str
+    followed_plan: bool = True
+
+
+@app.post("/cook-sessions/{session_id}/complete")
+def complete_cook_session(session_id: int, body: SessionOutcome, session: Session = Depends(get_session)):
+    """Household or cook marks a session done and records what actually happened."""
+    cook_session = session.get(CookSession, session_id)
+    if not cook_session:
+        raise HTTPException(status_code=404, detail="Cook session not found")
+    notes = cook_session.notes or ""
+    interventions = notes.count("[APPROVAL NEEDED]") + notes.count("[APPROVED]") + notes.count("[REJECTED]")
+    cook_session.status = "completed"
+    cook_session.outcome_meal = body.outcome_meal
+    cook_session.outcome_notes = body.outcome_notes
+    cook_session.human_interventions = interventions
+    cook_session.completed_at = datetime.utcnow().isoformat()
+    session.add(cook_session)
+    session.commit()
+    return {
+        "id": cook_session.id,
+        "status": "completed",
+        "outcome_meal": cook_session.outcome_meal,
+        "followed_plan": body.followed_plan,
+        "human_interventions": interventions,
+        "message": "Session outcome recorded."
+    }
+
+
+# ---- Operational Analytics ----
+
+@app.get("/analytics")
+def get_analytics(session: Session = Depends(get_session)):
+    """Operational metrics: automation rate, common exceptions, intervention frequency."""
+    all_sessions = session.exec(select(CookSession)).all()
+    completed = [s for s in all_sessions if s.status == "completed"]
+
+    total = len(completed)
+    if total == 0:
+        return {
+            "completed_sessions": 0,
+            "automation_rate_pct": None,
+            "avg_human_interventions": None,
+            "sessions_with_substitutions": 0,
+            "sessions_deviated_from_plan": 0,
+            "message": "No completed sessions yet. Cook and complete a session to see metrics."
+        }
+
+    total_interventions = sum(s.human_interventions for s in completed)
+    zero_intervention = sum(1 for s in completed if s.human_interventions == 0)
+    automation_rate = round(zero_intervention / total * 100, 1)
+
+    sessions_with_subs = sum(1 for s in completed if json.loads(s.substitutions))
+    deviated = sum(1 for s in completed if s.outcome_meal and s.outcome_meal != s.meal_name)
+
+    # Collect all substitutions made
+    all_subs = []
+    for s in completed:
+        subs = json.loads(s.substitutions)
+        all_subs.extend(subs)
+
+    missing_ingredients = [sub.get("missing") for sub in all_subs if sub.get("missing")]
+    from collections import Counter
+    common_missing = Counter(missing_ingredients).most_common(5)
+
+    return {
+        "completed_sessions": total,
+        "automation_rate_pct": automation_rate,
+        "avg_human_interventions": round(total_interventions / total, 2),
+        "sessions_with_substitutions": sessions_with_subs,
+        "sessions_deviated_from_plan": deviated,
+        "common_missing_ingredients": [{"ingredient": k, "count": v} for k, v in common_missing],
+        "insight": (
+            f"{automation_rate}% of cook sessions completed without any human approval needed. "
+            f"Most common friction: {common_missing[0][0] if common_missing else 'none recorded'}."
+        )
+    }
+
+
+# ---- Cook Approval Workflow ----
+
+class ApprovalDecision(BaseModel):
+    decision: str  # "approve" or "reject"
+    reason: Optional[str] = None
+
+
+@app.get("/cook-sessions/{session_id}/approvals")
+def get_pending_approvals(session_id: int, session: Session = Depends(get_session)):
+    """List all pending approval requests from the cook for this session."""
+    cook_session = session.get(CookSession, session_id)
+    if not cook_session:
+        raise HTTPException(status_code=404, detail="Cook session not found")
+    notes = cook_session.notes or ""
+    approvals = []
+    for i, line in enumerate(notes.splitlines()):
+        if "[APPROVAL NEEDED]" in line:
+            approvals.append({"index": i, "request": line.replace("[APPROVAL NEEDED]", "").strip(), "status": "pending"})
+        elif "[APPROVED]" in line or "[REJECTED]" in line:
+            tag = "[APPROVED]" if "[APPROVED]" in line else "[REJECTED]"
+            approvals.append({"index": i, "request": line.replace(tag, "").strip(), "status": tag[1:-1].lower()})
+    return {"cook_session_id": session_id, "approvals": approvals}
+
+
+@app.post("/cook-sessions/{session_id}/approvals/{approval_index}")
+def decide_approval(
+    session_id: int,
+    approval_index: int,
+    body: ApprovalDecision,
+    session: Session = Depends(get_session)
+):
+    """Household approves or rejects a cook's change request."""
+    cook_session = session.get(CookSession, session_id)
+    if not cook_session:
+        raise HTTPException(status_code=404, detail="Cook session not found")
+    if body.decision not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="decision must be 'approve' or 'reject'")
+
+    lines = (cook_session.notes or "").splitlines()
+    if approval_index >= len(lines) or "[APPROVAL NEEDED]" not in lines[approval_index]:
+        raise HTTPException(status_code=404, detail="Pending approval not found at that index")
+
+    tag = "[APPROVED]" if body.decision == "approve" else "[REJECTED]"
+    reason_suffix = f" (Reason: {body.reason})" if body.reason else ""
+    lines[approval_index] = lines[approval_index].replace("[APPROVAL NEEDED]", tag) + reason_suffix
+    cook_session.notes = "\n".join(lines)
+    session.add(cook_session)
+    session.commit()
+
+    return {
+        "cook_session_id": session_id,
+        "decision": body.decision,
+        "message": f"Change {'approved' if body.decision == 'approve' else 'rejected'} by household.",
+        "note": lines[approval_index]
+    }
 
 
 # ---- Static Files ----

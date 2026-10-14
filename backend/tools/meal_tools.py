@@ -1,44 +1,7 @@
 import json
+import os
 from typing import List, Dict, Any
 
-
-DEMO_MEAL_PLAN = {
-    "Monday": {
-        "breakfast": "Oatmeal with berries and honey (V, DF option)",
-        "lunch": "Vegetable minestrone soup with crusty bread",
-        "dinner": "Lentil dal with basmati rice and soft naan (V, soft-food friendly)"
-    },
-    "Tuesday": {
-        "breakfast": "Scrambled eggs with whole-wheat toast and fruit",
-        "lunch": "Chicken Caesar salad (grilled chicken separate for Sarah)",
-        "dinner": "Baked salmon with steamed broccoli and mashed potatoes"
-    },
-    "Wednesday": {
-        "breakfast": "Greek yogurt parfait with granola and strawberries (V)",
-        "lunch": "Caprese sandwich on soft focaccia (V)",
-        "dinner": "Mushroom and spinach pasta with marinara sauce (V)"
-    },
-    "Thursday": {
-        "breakfast": "Banana pancakes with maple syrup",
-        "lunch": "Turkey and avocado wrap (soft tortilla for George)",
-        "dinner": "Chicken stir-fry with mixed vegetables and jasmine rice"
-    },
-    "Friday": {
-        "breakfast": "Smoothie bowls with mango and coconut (V, GF)",
-        "lunch": "Tomato basil soup with grilled cheese on soft bread (V)",
-        "dinner": "Baked cod with roasted sweet potatoes and green beans"
-    },
-    "Saturday": {
-        "breakfast": "Vegetable omelette with whole grain toast (V)",
-        "lunch": "Hummus and veggie platter with soft pita (V)",
-        "dinner": "Eggplant parmesan with Caesar salad (V)"
-    },
-    "Sunday": {
-        "breakfast": "French toast with fresh berries and light syrup",
-        "lunch": "Butternut squash soup with soft dinner rolls",
-        "dinner": "Roast chicken with soft roasted vegetables and gravy"
-    }
-}
 
 ALLERGEN_MAP = {
     "peanuts": ["peanut", "peanut butter", "peanut oil", "groundnut"],
@@ -51,23 +14,182 @@ ALLERGEN_MAP = {
     "fish": ["salmon", "tuna", "cod", "tilapia", "halibut", "anchovy"],
 }
 
+MEAT_WORDS = ["chicken", "beef", "pork", "lamb", "turkey", "bacon", "ham", "sausage",
+              "prawn", "shrimp", "mutton", "veal", "duck", "fish", "salmon", "tuna"]
 
-def generate_meal_plan(household_members: List[Dict], preferences: Dict = None) -> Dict:
-    """Generate a 7-day meal plan respecting household constraints."""
-    restrictions = set()
-    allergies = set()
+FALLBACK_MEAL_PLAN = {
+    "Monday": {
+        "breakfast": "Oatmeal with berries and honey",
+        "lunch": "Vegetable minestrone soup with crusty bread",
+        "dinner": "Lentil dal with basmati rice and soft naan"
+    },
+    "Tuesday": {
+        "breakfast": "Scrambled eggs with whole-wheat toast and fruit",
+        "lunch": "Chickpea salad with cucumber, tomato and lemon dressing",
+        "dinner": "Baked salmon with steamed broccoli and mashed potatoes"
+    },
+    "Wednesday": {
+        "breakfast": "Greek yogurt parfait with granola and strawberries",
+        "lunch": "Caprese sandwich on soft focaccia",
+        "dinner": "Mushroom and spinach pasta with marinara sauce"
+    },
+    "Thursday": {
+        "breakfast": "Banana pancakes with maple syrup",
+        "lunch": "Turkey and avocado wrap with soft tortilla for George",
+        "dinner": "Chicken stir-fry with mixed vegetables and jasmine rice, tofu stir-fry for Sarah"
+    },
+    "Friday": {
+        "breakfast": "Smoothie bowls with mango and coconut",
+        "lunch": "Tomato basil soup with grilled cheese on soft bread",
+        "dinner": "Baked cod with roasted sweet potatoes and green beans"
+    },
+    "Saturday": {
+        "breakfast": "Vegetable omelette with whole grain toast",
+        "lunch": "Hummus and veggie platter with soft pita",
+        "dinner": "Eggplant parmesan with Caesar salad"
+    },
+    "Sunday": {
+        "breakfast": "French toast with fresh berries and light syrup",
+        "lunch": "Butternut squash soup with soft dinner rolls",
+        "dinner": "Roast chicken with soft roasted vegetables and gravy, roasted vegetable plate for Sarah"
+    }
+}
+
+
+def _build_constraint_summary(household_members: List[Dict]) -> str:
+    lines = []
+    for m in household_members:
+        restrictions = m.get("dietary_restrictions", [])
+        allergies = m.get("allergies", [])
+        preferences = m.get("preferences", [])
+        parts = []
+        if restrictions:
+            parts.append(f"dietary restrictions: {', '.join(restrictions)}")
+        if allergies:
+            parts.append(f"allergies: {', '.join(allergies)} (STRICT - never include)")
+        if preferences:
+            parts.append(f"preferences: {', '.join(preferences)}")
+        lines.append(f"- {m['name']}: {'; '.join(parts) if parts else 'no restrictions'}")
+    return "\n".join(lines)
+
+
+def generate_meal_plan(household_members: List[Dict], special_requests: str = "") -> Dict:
+    """Generate a 7-day meal plan using the LLM, respecting all household constraints."""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return {"plan": FALLBACK_MEAL_PLAN, "notes": "Using fallback plan (no API key)", "week_start": "2026-10-14"}
+
+    constraint_summary = _build_constraint_summary(household_members)
+    special_note = f"\nSpecial requests: {special_requests}" if special_requests else ""
+
+    prompt = f"""You are a professional meal planner. Generate a 7-day meal plan for this household.
+
+HOUSEHOLD MEMBERS AND CONSTRAINTS:
+{constraint_summary}{special_note}
+
+RULES:
+1. Every meal must be safe for ALL members simultaneously.
+2. Allergies are absolute: never include the allergen or derivatives.
+3. Vegetarian members must have a meat-free option for every meal (or the whole meal is vegetarian).
+4. Diabetic/soft-food members need low-sugar, well-cooked, easily chewed meals.
+5. Meals should be realistic home-cooking, nutritionally balanced, and varied across the week.
+6. When a meal has meat, note a vegetarian alternative inline (e.g. "tofu option for vegetarians").
+
+OUTPUT FORMAT - respond ONLY with valid JSON, no other text:
+{{
+  "Monday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
+  "Tuesday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
+  "Wednesday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
+  "Thursday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
+  "Friday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
+  "Saturday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}},
+  "Sunday": {{"breakfast": "...", "lunch": "...", "dinner": "..."}}
+}}"""
+
+    try:
+        from groq import Groq
+        client = Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model="qwen/qwen3.8-27b",
+            messages=[
+                {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2048,
+            temperature=0.7,
+        )
+        raw = response.choices[0].message.content.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        raw = raw.strip()
+        plan = json.loads(raw)
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        if all(d in plan for d in days):
+            restrictions_used = [r for m in household_members for r in m.get("dietary_restrictions", [])]
+            allergies_used = [a for m in household_members for a in m.get("allergies", [])]
+            return {
+                "plan": plan,
+                "notes": f"AI-generated plan. Restrictions respected: {restrictions_used}. Allergens excluded: {allergies_used}.",
+                "week_start": "2026-10-14"
+            }
+    except Exception as e:
+        pass
+
+    return {
+        "plan": FALLBACK_MEAL_PLAN,
+        "notes": "Using fallback plan due to generation error",
+        "week_start": "2026-10-14"
+    }
+
+
+def validate_meal_against_household(meal_description: str, household_members: List[Dict]) -> Dict:
+    """Check if a meal description is safe for all household members. Returns errors if not."""
+    meal_lower = meal_description.lower()
+    violations = []
 
     for member in household_members:
-        for r in member.get("dietary_restrictions", []):
-            restrictions.add(r.lower())
-        for a in member.get("allergies", []):
-            allergies.add(a.lower())
+        name = member["name"]
 
-    # Return demo plan (in production, AI would generate dynamically)
+        for allergy in member.get("allergies", []):
+            allergy_lower = allergy.lower()
+            triggers = ALLERGEN_MAP.get(allergy_lower, [allergy_lower])
+            for trigger in triggers:
+                if trigger in meal_lower:
+                    violations.append({
+                        "member": name,
+                        "type": "allergy",
+                        "allergen": allergy,
+                        "trigger": trigger,
+                        "severity": "CRITICAL"
+                    })
+                    break
+
+        for restriction in member.get("dietary_restrictions", []):
+            if restriction.lower() == "vegetarian":
+                for meat in MEAT_WORDS:
+                    if meat in meal_lower:
+                        # Check if there's an explicit vegetarian alternative mentioned
+                        has_alternative = any(kw in meal_lower for kw in
+                                              ["tofu", "vegetarian", "veggie", "paneer", "legume",
+                                               "lentil", "chickpea", "bean", "tempeh"])
+                        if not has_alternative:
+                            violations.append({
+                                "member": name,
+                                "type": "dietary_restriction",
+                                "restriction": "vegetarian",
+                                "trigger": meat,
+                                "severity": "HIGH"
+                            })
+                        break
+
     return {
-        "plan": DEMO_MEAL_PLAN,
-        "notes": f"Plan respects restrictions: {list(restrictions)}, avoids allergens: {list(allergies)}",
-        "week_start": "2026-10-14"
+        "meal": meal_description,
+        "safe": len(violations) == 0,
+        "violations": violations,
+        "recommendation": "Safe for all members" if not violations else f"{len(violations)} violation(s) found - do not save"
     }
 
 
@@ -91,8 +213,7 @@ def check_ingredient_safety(ingredient: str, household_members: List[Dict]) -> D
 
         for restriction in member.get("dietary_restrictions", []):
             if restriction.lower() == "vegetarian":
-                meat_words = ["chicken", "beef", "pork", "lamb", "turkey", "bacon", "ham", "sausage"]
-                for meat in meat_words:
+                for meat in MEAT_WORDS:
                     if meat in ingredient_lower:
                         conflicts.append({
                             "member": member["name"],

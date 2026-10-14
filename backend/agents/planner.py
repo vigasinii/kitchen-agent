@@ -5,7 +5,7 @@ from typing import List, Dict
 from sqlmodel import Session, select
 
 from models import HouseholdMember, MealPlan, ConversationMessage
-from tools.meal_tools import generate_meal_plan, check_ingredient_safety
+from tools.meal_tools import generate_meal_plan, check_ingredient_safety, validate_meal_against_household
 from tools.grocery import consolidate_grocery_list
 
 GROQ_MODEL = "qwen/qwen3.8-27b"
@@ -145,7 +145,7 @@ class PlannerAgent:
                 }
                 for m in members
             ]
-            plan_data = generate_meal_plan(member_data)
+            plan_data = generate_meal_plan(member_data, special_requests=tool_input.get("special_requests", ""))
             new_plan = MealPlan(
                 week_start=tool_input.get("week_start", "2026-10-14"),
                 status="planning",
@@ -160,6 +160,21 @@ class PlannerAgent:
             plan = self.session.get(MealPlan, tool_input["plan_id"])
             if not plan:
                 return json.dumps({"error": "Plan not found"})
+            # Safety check before saving
+            members = self.session.exec(select(HouseholdMember)).all()
+            member_data = [
+                {"name": m.name, "dietary_restrictions": json.loads(m.dietary_restrictions), "allergies": json.loads(m.allergies)}
+                for m in members
+            ]
+            safety = validate_meal_against_household(tool_input["new_meal"], member_data)
+            if not safety["safe"]:
+                critical = [v for v in safety["violations"] if v["severity"] == "CRITICAL"]
+                return json.dumps({
+                    "error": "Meal rejected: safety violations detected",
+                    "violations": safety["violations"],
+                    "recommendation": "Choose a different meal that avoids these conflicts",
+                    "critical_count": len(critical)
+                })
             meals = json.loads(plan.meals)
             day = tool_input["day"]
             meal_type = tool_input["meal_type"]
@@ -168,7 +183,7 @@ class PlannerAgent:
                 plan.meals = json.dumps(meals)
                 self.session.add(plan)
                 self.session.commit()
-                return json.dumps({"success": True, "updated": f"{day} {meal_type} -> {tool_input['new_meal']}"})
+                return json.dumps({"success": True, "updated": f"{day} {meal_type} -> {tool_input['new_meal']}", "safety": "passed"})
             return json.dumps({"error": f"Day {day} not found in plan"})
 
         elif tool_name == "get_current_plan":

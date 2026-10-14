@@ -1,108 +1,91 @@
-# Anyaa Kitchen OS
+# Kitchen Agent
 
-A voice-first household meal planning and execution assistant for a 4-person household.
+A voice-first household meal planning and cooking assistant. Two AI agents handle the full loop: the Planner Agent works with the household to create a constraint-aware weekly meal plan, and the Cook Agent guides the cook through daily execution with real-time substitution help and an approval workflow.
 
----
+## Stack
 
-## Setup
+- **Backend**: FastAPI + SQLite (via SQLModel)
+- **AI**: Groq API (`qwen/qwen3.8-27b`) with tool-use loops
+- **Frontend**: React 18 (CDN, no build step), Web Speech API
+- **Deploy**: Render (backend) + Vercel (frontend)
 
-### 1. Install dependencies
+## Running locally
+
+**Requirements**: Python 3.10+, a [Groq API key](https://console.groq.com)
 
 ```bash
-cd kitchen-os/backend
+cd backend
 pip install -r requirements.txt
+cp .env.example .env      # add your GROQ_API_KEY
+uvicorn main:app --port 8888
 ```
 
-### 2. Set your API key
+Open `http://localhost:8888` in your browser.
 
-Create a `.env` file in the `backend/` directory:
-
-```
-ANTHROPIC_API_KEY=your-key-here
-```
-
-Without this key the app still runs and serves UI + seeded data, but the AI chat features will return a friendly error message.
-
-### 3. Run the server
+## Running evaluations
 
 ```bash
-cd kitchen-os/backend
-uvicorn main:app --reload
+cd backend
+python evals.py
 ```
 
-The app serves both the API and the frontend at http://localhost:8000
+Runs 8 scenario groups (allergy enforcement, vegetarian constraints, ingredient safety, meal generation, substitution chains, approval parsing) with 15+ individual checks. Exit code 0 = all passed.
 
----
+## Demo household
 
-## Demo Household
-
-The app seeds a 4-person household on first launch:
-
-| Name   | Role        | Key restrictions                              |
+| Name   | Role        | Key constraints                               |
 |--------|-------------|-----------------------------------------------|
 | Sarah  | Adult       | Vegetarian — no meat                         |
 | Mike   | Adult       | No restrictions                               |
-| Emma   | Child (~8)  | **Severe peanut allergy** + kid-friendly food |
+| Emma   | Child (~8)  | Severe peanut allergy (life-critical)         |
 | George | Grandparent | Soft foods, mild spice, diabetic-friendly     |
 
-A full approved 7-day meal plan and grocery list are seeded automatically so the UI is populated before you use the AI.
+A 7-day meal plan and grocery list are seeded on first launch so the UI is populated before you chat.
 
----
+## Using the app
 
-## Using the App
+**Planner tab** — chat to generate or adjust the week's meals. Voice input via mic button. Try:
+- "Plan a new week with more Indian food"
+- "Can we swap Tuesday dinner for something lighter for George?"
+- "Is cashew cream safe for Emma?"
 
-### Planner Tab
-Chat with Anyaa to plan or adjust the week's meals. Voice input via the mic button — your browser's Web Speech API captures audio, Anyaa responds in text and speaks the reply aloud.
+**Cook tab** — select a day and meal, click Start Cooking, then get step-by-step guidance. Try:
+- "I don't have salmon, what can I substitute?"
+- "Emma has a friend over, can we make the dessert nut-free?"
+- "The household needs to approve skipping tonight's planned meal"
 
-Try:
-- "What's on the plan for Wednesday dinner?"
-- "Can we swap Saturday lunch for something lighter?"
-- "Is pesto safe for Emma?"
+**Meal Plan tab** — 7-day grid, approve the plan to lock it in.
 
-### Cook Tab
-Select a day and meal, click **Start Cooking**, then chat with the Cook Copilot for step-by-step guidance, timing, and substitution help.
+**Grocery tab** — consolidated shopping list, click Order via Instamart to simulate ordering.
 
-Try:
-- "I don't have mozzarella, what can I use?"
-- "How long does the salmon need in the oven?"
-- "Emma is helping me today, what should she do first?"
-
-### Meal Plan Tab
-7-day calendar grid. Click **Approve Plan** to confirm the week's meals.
-
-### Grocery List Tab
-Consolidated shopping list derived from the meal plan, grouped by category. Click **Order via Instamart** to simulate placing a grocery order (returns a fake order ID and ETA).
-
----
-
-## Architecture
+## Project structure
 
 ```
-browser (React 18 via CDN)
-    ↕ HTTP/JSON
-FastAPI backend (Python)
-    ├── /chat/planner → PlannerAgent (Anthropic tool-use loop)
-    ├── /chat/cook    → CookAgent   (Anthropic tool-use loop)
-    ├── SQLite via SQLModel (models: HouseholdMember, MealPlan, GroceryList, CookSession, ConversationMessage)
-    └── Static file mount → serves frontend/
+backend/
+  main.py            FastAPI routes (household, meal plans, grocery, cook sessions, approvals)
+  database.py        SQLite setup and demo seed
+  models.py          SQLModel table definitions
+  agents/
+    planner.py       Planner Agent: LLM tool-use loop, safety validation before saves
+    cook.py          Cook Agent: real-time guidance, substitution, approval flagging
+  tools/
+    meal_tools.py    Dynamic LLM meal generation, pre-save safety validator
+    grocery.py       Grocery consolidation, Instamart simulation
+  evals.py           Repeatable evaluation suite
+frontend/
+  index.html
+  app.js             React components, voice input/output
+  styles.css
 ```
 
-Both agents use a tool-use agentic loop: the model requests tools (e.g. `get_household_members`, `suggest_substitution`), the backend executes the Python function, sends back `tool_result`, and the model continues until it produces a final text response.
-
-Conversation history is persisted in SQLite so context survives page reloads.
-
----
-
-## What is Real vs Simulated
+## What is real vs. simulated
 
 | Feature | Status |
 |---|---|
-| AI chat (Planner + Cook) | Real — Claude claude-haiku-4-5 via Anthropic API |
-| Voice input | Real — browser Web Speech API (Chrome/Edge) |
-| Voice output | Real — browser SpeechSynthesis API |
-| Household data | Seeded demo data, real DB (SQLite) |
-| Meal plan generation | Demo plan hard-coded; AI can modify via tools |
-| Ingredient safety checks | Real logic against allergen map |
-| Grocery list | Derived from meal plan via ingredient database |
-| Instamart order | **Simulated** — returns fake order ID, ETA, cost |
-| Grocery delivery | **Simulated** — no real integration |
+| AI meal planning (constraint-aware, LLM-generated) | Real (Groq) |
+| Pre-save safety validation (allergy + dietary) | Real (blocks unsafe meals) |
+| Voice input/output | Real (Web Speech API) |
+| Household profiles + restrictions | Real (SQLite) |
+| Cook-to-household approval workflow | Real (flagged in session, household approves/rejects via API) |
+| Grocery list generation | Real (rule-based consolidation from meal plan) |
+| Instamart ordering | Simulated (returns mock order ID and ETA) |
