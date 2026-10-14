@@ -1678,25 +1678,25 @@ function AnalyticsScreen() {
 }
 
 /* ===================================================================
-   COLD START BANNER
-   Render free tier spins down after inactivity. First request after
-   that takes 30-60 seconds. This banner appears only on production
-   (non-localhost) when the backend takes more than 3 seconds to respond.
+   COLD START SPLASH
    =================================================================== */
 function ColdStartBanner() {
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const [state, setState] = useState('checking'); // checking | slow | ready | error
+  const [progress, setProgress] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
-    if (isLocal) { setState('ready'); return; }
+    if (isLocal) { setState('ready'); setDone(true); return; }
 
-    const slowTimer = setTimeout(() => setState('slow'), 3000);
-    const start = Date.now();
+    const slowTimer = setTimeout(() => setState('slow'), 2500);
 
     axios.get(`${API}/household`, { timeout: 90000 })
       .then(() => {
         clearTimeout(slowTimer);
-        setState('ready');
+        setProgress(100);
+        setTimeout(() => { setState('ready'); setDone(true); }, 600);
       })
       .catch(() => {
         clearTimeout(slowTimer);
@@ -1706,37 +1706,65 @@ function ColdStartBanner() {
     return () => clearTimeout(slowTimer);
   }, []);
 
-  if (isLocal || state === 'ready') return null;
+  // Animate progress bar over ~55s (typical Render cold start)
+  useEffect(() => {
+    if (state !== 'slow') return;
+    const interval = setInterval(() => {
+      setElapsed(e => {
+        const next = e + 1;
+        // Ease toward 90%, never reach 100 until ready
+        setProgress(Math.min(90, Math.round(90 * (1 - Math.exp(-next / 35)))));
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [state]);
 
-  if (state === 'slow') {
-    return (
-      <div className="cold-start-banner cold-start-slow">
-        <div className="cold-start-inner">
-          <span className="cold-start-spinner" />
-          <div>
-            <strong>Backend is waking up</strong>
-            <span>The server goes to sleep after inactivity (Render free tier). This takes 30 to 60 seconds on first load. Everything will work normally after.</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (done || state === 'ready') return null;
+
+  const MESSAGES = [
+    'Warming up the kitchen...',
+    'Fetching household profiles...',
+    'Loading meal plans...',
+    'Almost there...',
+    'Just a few more seconds...',
+  ];
+  const msgIdx = Math.min(Math.floor(elapsed / 11), MESSAGES.length - 1);
 
   if (state === 'error') {
     return (
-      <div className="cold-start-banner cold-start-error">
-        <div className="cold-start-inner">
-          <Icon name="AlertCircle" size={16} />
-          <div>
-            <strong>Backend unreachable</strong>
-            <span>Could not connect to the server. If this is a fresh deploy, wait 60 seconds and refresh.</span>
-          </div>
+      <div className="cold-splash">
+        <div className="cold-splash-box">
+          <div className="cold-splash-icon">⚠️</div>
+          <div className="cold-splash-title">Could not reach the server</div>
+          <div className="cold-splash-sub">Wait 60 seconds then refresh the page.</div>
+          <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={() => window.location.reload()}>
+            Refresh
+          </button>
         </div>
       </div>
     );
   }
 
-  return null;
+  return (
+    <div className="cold-splash">
+      <div className="cold-splash-box">
+        <div className="cold-splash-logo">🍳</div>
+        <div className="cold-splash-title">Kitchen Agent</div>
+        <div className="cold-splash-sub">
+          {state === 'checking' ? 'Connecting...' : MESSAGES[msgIdx]}
+        </div>
+        <div className="cold-splash-bar-track">
+          <div className="cold-splash-bar-fill" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="cold-splash-note">
+          {state === 'slow'
+            ? `Server is waking up from sleep (${elapsed}s) — Render free tier`
+            : 'Starting up...'}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ===================================================================
