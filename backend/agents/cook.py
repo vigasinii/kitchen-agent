@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from models import HouseholdMember, MealPlan, CookSession, ConversationMessage, ApprovalRequest
 from tools.meal_tools import check_ingredient_safety
 
-GROQ_MODEL = "openai/gpt-oss-20b"
+GROQ_MODEL = "qwen/qwen3.8-27b"
 
 COOK_TOOLS = [
     {

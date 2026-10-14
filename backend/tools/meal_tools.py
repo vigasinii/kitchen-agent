@@ -99,7 +99,7 @@ Reply ONLY with JSON: {{"Monday":{{"breakfast":"...","lunch":"...","dinner":"...
         for attempt in range(3):
             try:
                 response = client.chat.completions.create(
-                    model="openai/gpt-oss-20b",
+                    model="qwen/qwen3.8-27b",
                     messages=[
                         {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
                         {"role": "user", "content": prompt}
