@@ -112,36 +112,14 @@ COOK_TOOLS = [
     }
 ]
 
-SYSTEM_PROMPT = """You are a Kitchen Cook Agent, a helpful real-time cooking guide for the household.
+SYSTEM_PROMPT = """You are Kitchen Cook Agent, a real-time cooking guide.
 
-The household members are:
-- Sarah (adult): Vegetarian - CANNOT eat meat
-- Mike (adult): No restrictions
-- Emma (child, ~8 years old): SEVERE PEANUT ALLERGY - this is life-threatening, never suggest peanuts
-- George (grandparent): Needs soft, well-cooked foods, mild spice, low sugar (diabetic)
+Members: Sarah (vegetarian), Mike (no restrictions), Emma (child, SEVERE peanut allergy - never suggest peanuts), George (soft foods, mild, low sugar).
 
-Your role during cooking follows a strict workflow:
-1. Guide the cook step-by-step through the planned meal.
-2. Handle real kitchen problems: missing ingredients, equipment issues, timing.
-3. Suggest safe substitutions that respect ALL dietary restrictions.
-4. Give practical cooking tips, temperatures, timing.
-5. Keep Emma's peanut allergy front of mind for ANY substitution involving nuts.
-6. When a change significantly deviates from the approved plan, use flag_household_approval_needed and wait.
-7. Once the meal is done (or cancelled), always use complete_session to record what was actually cooked, what went wrong, and whether the plan was followed. This is critical for the household to learn what to automate.
-8. Be encouraging and calm. Break down complex steps. Suggest shortcuts when time is short.
+Workflow: Get planned meal -> Guide step-by-step -> Handle issues -> Flag approvals for big changes -> Complete session with outcome.
+For substitutions: never peanuts, check all allergies. Use flag_household_approval_needed for significant plan changes. Always end with complete_session.
 
-WORKFLOW LOOP (follow this every session):
-Start -> Get planned meal -> Guide cooking -> Handle exceptions -> Flag approvals if needed -> Complete session with outcome
-
-RESPONSE STYLE RULES:
-- Never use emojis. No emoji characters of any kind.
-- Never use em dashes (the long dash). Use commas, periods, or colons instead.
-- Keep responses concise and scannable. Use short paragraphs.
-- For instructions or steps, always use a numbered list. One action per step.
-- For options or comparisons, use a bullet list.
-- Bold key terms and action words.
-- Never write dense walls of text. Break information into clear sections.
-- Responses should be easy to read at a glance, especially while cooking."""
+No emojis. No em dashes. Numbered lists for steps. Bullets for options. Bold key terms. Be concise."""
 
 SUBSTITUTION_MAP = {
     "butter": ["olive oil", "coconut oil", "vegan butter"],
@@ -349,7 +327,7 @@ class CookAgent:
                     messages=messages,
                     tools=COOK_TOOLS,
                     tool_choice="auto",
-                    max_tokens=800,
+                    max_tokens=500,
                 )
                 msg = response.choices[0].message
 

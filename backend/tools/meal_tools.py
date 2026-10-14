@@ -120,7 +120,7 @@ OUTPUT FORMAT - respond ONLY with valid JSON, no other text:
                 {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=1200,
+            max_tokens=700,
             temperature=0.7,
         )
         raw = response.choices[0].message.content.strip()
