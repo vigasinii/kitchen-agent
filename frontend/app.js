@@ -173,13 +173,18 @@ async function speak(text) {
     currentAudio = new Audio(url);
     currentAudio.play();
     currentAudio.onended = () => URL.revokeObjectURL(url);
-  } catch {
-    // Fallback to browser TTS if backend unavailable
+  } catch (err) {
+    console.warn('Orpheus TTS failed, falling back to browser TTS:', err);
     if (!window.speechSynthesis) return;
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     window.speechSynthesis.speak(utterance);
   }
+}
+
+function stopSpeaking() {
+  if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; currentAudio = null; }
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
 }
 
 /* ===================================================================
@@ -329,6 +334,14 @@ function VoiceComposer({ onSend, loading, placeholder, chips }) {
             onKeyDown={handleKeyDown}
             placeholder={voiceState === 'listening' ? 'Listening...' : placeholder || 'Type a message...'}
           />
+
+          <button
+            className="stop-voice-btn"
+            onClick={stopSpeaking}
+            title="Stop speaking"
+          >
+            <Icon name="VolumeX" size={14} />
+          </button>
 
           <button
             className="send-btn-composer"

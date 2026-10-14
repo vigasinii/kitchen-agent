@@ -782,6 +782,27 @@ svg.icon {
   100% { box-shadow: 0 0 0 0 rgba(35, 76, 60, 0); }
 }
 
+.stop-voice-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition);
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.stop-voice-btn:hover {
+  background: #fff0f0;
+  color: #c0392b;
+  border-color: #c0392b;
+}
+
 .send-btn-composer {
   width: 36px;
   height: 36px;
