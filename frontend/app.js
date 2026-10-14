@@ -7,7 +7,7 @@ const { useState, useEffect, useRef, useCallback, useMemo, createContext, useCon
 
 const API = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
   ? "http://localhost:8888"
-  : (window.KITCHEN_API_URL || "");
+  : "https://kitchen-agent-1sqb.onrender.com";
 
 /* ===================================================================
    INLINE SVG ICONS
