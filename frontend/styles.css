@@ -828,6 +828,56 @@ svg.icon {
   cursor: not-allowed;
 }
 
+.speaking-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  user-select: none;
+  animation: speaking-pulse 2s ease-in-out infinite;
+}
+
+.speaking-banner:hover {
+  background: #1a3a2d;
+}
+
+@keyframes speaking-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+.speaking-wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+}
+
+.speaking-wave span {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: #fff;
+  animation: wave-bar 0.9s ease-in-out infinite;
+}
+
+.speaking-wave span:nth-child(1) { animation-delay: 0s; }
+.speaking-wave span:nth-child(2) { animation-delay: 0.15s; }
+.speaking-wave span:nth-child(3) { animation-delay: 0.3s; }
+.speaking-wave span:nth-child(4) { animation-delay: 0.45s; }
+
+@keyframes wave-bar {
+  0%, 100% { height: 4px; }
+  50% { height: 14px; }
+}
+
 .voice-banner {
   text-align: center;
   font-size: 12px;

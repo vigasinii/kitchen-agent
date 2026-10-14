@@ -155,29 +155,50 @@ function useVoice(onResult) {
 }
 
 let currentAudio = null;
+let isSpeaking = false;
+const speakingListeners = new Set();
+
+function setSpeaking(val) {
+  isSpeaking = val;
+  speakingListeners.forEach(fn => fn(val));
+}
+
+function cleanForTTS(text) {
+  return text
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/#+ /g, '')
+    .replace(/^\s*[-•]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .trim();
+}
 
 async function speak(text) {
-  // Stop any current playback
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+  const clean = cleanForTTS(text);
 
   try {
     const res = await fetch(`${API}/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice: 'tara' }),
+      body: JSON.stringify({ text: clean, voice: 'tara' }),
     });
     if (!res.ok) throw new Error('TTS failed');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     currentAudio = new Audio(url);
+    setSpeaking(true);
     currentAudio.play();
-    currentAudio.onended = () => URL.revokeObjectURL(url);
+    currentAudio.onended = () => { URL.revokeObjectURL(url); setSpeaking(false); };
   } catch (err) {
     console.warn('Orpheus TTS failed, falling back to browser TTS:', err);
     if (!window.speechSynthesis) return;
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(clean);
     utterance.rate = 1.0;
+    setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
     window.speechSynthesis.speak(utterance);
   }
 }
@@ -185,6 +206,7 @@ async function speak(text) {
 function stopSpeaking() {
   if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; currentAudio = null; }
   if (window.speechSynthesis) window.speechSynthesis.cancel();
+  setSpeaking(false);
 }
 
 /* ===================================================================
@@ -610,6 +632,23 @@ const PLANNER_CHIPS = [
   { label: 'Replace a meal', message: 'I want to replace a meal in the current plan. Ask me which day and meal type.' },
 ];
 
+function SpeakingBanner() {
+  const [speaking, setSpeaking] = useState(isSpeaking);
+  useEffect(() => {
+    speakingListeners.add(setSpeaking);
+    return () => speakingListeners.delete(setSpeaking);
+  }, []);
+  if (!speaking) return null;
+  return (
+    <div className="speaking-banner" onClick={stopSpeaking}>
+      <span className="speaking-wave">
+        <span /><span /><span /><span />
+      </span>
+      Riya is speaking — tap to stop
+    </div>
+  );
+}
+
 function PlannerScreen() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -682,6 +721,8 @@ function PlannerScreen() {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      <SpeakingBanner />
 
       <VoiceComposer
         onSend={sendMessage}
