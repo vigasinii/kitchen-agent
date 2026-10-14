@@ -79,11 +79,14 @@ def _build_constraint_summary(household_members: List[Dict]) -> str:
     return "\n".join(lines)
 
 
+GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+
+
 def generate_meal_plan(household_members: List[Dict], special_requests: str = "") -> Dict:
-    """Generate a 7-day meal plan using the LLM, respecting all household constraints."""
+    """Generate a 7-day meal plan using the LLM. Raises on failure — no silent fallback."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        return {"plan": FALLBACK_MEAL_PLAN, "notes": "Using fallback plan (no API key)", "week_start": "2026-10-14"}
+        raise RuntimeError("GROQ_API_KEY not set. Cannot generate a meal plan.")
 
     constraint_summary = _build_constraint_summary(household_members)
     special_note = f"\nSpecial requests: {special_requests}" if special_requests else ""
@@ -92,54 +95,48 @@ def generate_meal_plan(household_members: List[Dict], special_requests: str = ""
 Rules: safe for all members; no allergens; vegetarian alternative when meat is served (note inline); soft/low-sugar for diabetic members; varied realistic home cooking.
 Reply ONLY with JSON: {{"Monday":{{"breakfast":"...","lunch":"...","dinner":"..."}},"Tuesday":{{...}},"Wednesday":{{...}},"Thursday":{{...}},"Friday":{{...}},"Saturday":{{...}},"Sunday":{{...}}}}"""
 
-    try:
-        from groq import Groq
-        client = Groq(api_key=api_key)
-        response = None
-        for attempt in range(3):
-            try:
-                response = client.chat.completions.create(
-                    model="qwen/qwen3.8-27b",
-                    messages=[
-                        {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    max_tokens=600,
-                    temperature=0.7,
-                )
-                break
-            except Exception as e:
-                if "429" in str(e) and attempt < 2:
-                    time.sleep(30)
-                else:
-                    raise
-        if not response:
-            raise Exception("No response after retries")
-        raw = response.choices[0].message.content.strip()
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        raw = raw.strip()
-        plan = json.loads(raw)
-        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        if all(d in plan for d in days):
+    from groq import Groq
+    client = Groq(api_key=api_key)
+    last_error = None
+    for attempt in range(2):
+        try:
+            t0 = time.time()
+            response = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=600,
+                temperature=0.7,
+                timeout=30,
+            )
+            elapsed = round(time.time() - t0, 2)
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            raw = raw.strip()
+            plan = json.loads(raw)
+            days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            if not all(d in plan for d in days):
+                raise ValueError(f"Plan missing days: {[d for d in days if d not in plan]}")
             restrictions_used = [r for m in household_members for r in m.get("dietary_restrictions", [])]
             allergies_used = [a for m in household_members for a in m.get("allergies", [])]
             return {
                 "plan": plan,
-                "notes": f"AI-generated plan. Restrictions respected: {restrictions_used}. Allergens excluded: {allergies_used}.",
+                "notes": f"AI-generated in {elapsed}s. Restrictions: {restrictions_used}. Allergens excluded: {allergies_used}.",
                 "week_start": "2026-10-14"
             }
-    except Exception as e:
-        pass
+        except Exception as e:
+            last_error = e
+            if "429" in str(e) and attempt == 0:
+                time.sleep(5)
+            else:
+                break
 
-    return {
-        "plan": FALLBACK_MEAL_PLAN,
-        "notes": "Using fallback plan due to generation error",
-        "week_start": "2026-10-14"
-    }
+    raise RuntimeError(f"Meal plan generation failed: {last_error}")
 
 
 def _trigger_is_negated(meal_lower: str, trigger: str) -> bool:

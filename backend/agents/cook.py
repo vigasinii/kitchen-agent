@@ -113,12 +113,15 @@ COOK_TOOLS = [
     }
 ]
 
+GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+MAX_TOOL_ROUNDS = 5
+
 SYSTEM_PROMPT = """You are Kitchen Cook Agent, a real-time cooking guide.
 
-Members: Sarah (vegetarian), Mike (no restrictions), Emma (child, SEVERE peanut allergy - never suggest peanuts), George (soft foods, mild, low sugar).
+{household_summary}
 
 Workflow: Get planned meal -> Guide step-by-step -> Handle issues -> Flag approvals for big changes -> Complete session with outcome.
-For substitutions: never peanuts, check all allergies. Use flag_household_approval_needed for significant plan changes. Always end with complete_session.
+For substitutions: respect all allergies strictly. Use flag_household_approval_needed for significant plan changes. Always end with complete_session.
 
 No emojis. No em dashes. Numbered lists for steps. Bullets for options. Bold key terms. Be concise."""
 
@@ -155,6 +158,24 @@ class CookAgent:
             .order_by(ConversationMessage.timestamp)
         ).all()
         return [{"role": m.role, "content": m.content} for m in messages[-8:]]
+
+    def _build_system_prompt(self) -> str:
+        members = self.session.exec(select(HouseholdMember)).all()
+        if members:
+            lines = []
+            for m in members:
+                restrictions = json.loads(m.dietary_restrictions)
+                allergies = json.loads(m.allergies)
+                parts = []
+                if restrictions:
+                    parts.append(f"diet: {', '.join(restrictions)}")
+                if allergies:
+                    parts.append(f"allergies: {', '.join(allergies)} (STRICT - never suggest)")
+                lines.append(f"- {m.name}: {'; '.join(parts) if parts else 'no restrictions'}")
+            summary = "Household:\n" + "\n".join(lines)
+        else:
+            summary = "Household: no members configured yet."
+        return SYSTEM_PROMPT.format(household_summary=summary)
 
     def _save_message(self, role: str, content: str, cook_session_id: int):
         session_tag = f"cook_{cook_session_id}"
@@ -316,29 +337,32 @@ class CookAgent:
         cook_session = self.session.get(CookSession, cook_session_id)
         context = ""
         if cook_session:
-            context = f"\n\nCurrent cook session: Day={cook_session.day}, Meal={cook_session.meal_name}, Status={cook_session.status}"
+            context = f"\n\nCurrent session: Day={cook_session.day}, Meal={cook_session.meal_name}, Status={cook_session.status}"
 
-        messages = [{"role": "system", "content": SYSTEM_PROMPT + context}] + history
+        system_prompt = self._build_system_prompt() + context
+        messages = [{"role": "system", "content": system_prompt}] + history
         response_text = ""
 
+        def groq_call():
+            for attempt in range(2):
+                try:
+                    return self.client.chat.completions.create(
+                        model=GROQ_MODEL,
+                        messages=messages,
+                        tools=COOK_TOOLS,
+                        tool_choice="auto",
+                        max_tokens=500,
+                        timeout=30,
+                    )
+                except Exception as e:
+                    if "429" in str(e) and attempt == 0:
+                        time.sleep(5)
+                    else:
+                        raise
+
         try:
-            while True:
-                for attempt in range(3):
-                    try:
-                        response = self.client.chat.completions.create(
-                            model=GROQ_MODEL,
-                            messages=messages,
-                            tools=COOK_TOOLS,
-                            tool_choice="auto",
-                            max_tokens=500,
-                            timeout=30,
-                        )
-                        break
-                    except Exception as e:
-                        if "429" in str(e) and attempt < 2:
-                            time.sleep(30)
-                        else:
-                            raise
+            for round_num in range(MAX_TOOL_ROUNDS):
+                response = groq_call()
                 msg = response.choices[0].message
 
                 if msg.tool_calls:
@@ -353,12 +377,14 @@ class CookAgent:
                 else:
                     response_text = msg.content or ""
                     break
+            else:
+                response_text = "I reached the maximum number of steps. Please try a simpler request."
 
         except Exception as e:
             response_text = f"Error: {str(e)}"
 
         if not response_text:
-            response_text = "I processed your request but didn't generate a response. Please try again."
+            response_text = "I could not generate a response. Please try again."
 
         self._save_message("assistant", response_text, cook_session_id)
         return response_text

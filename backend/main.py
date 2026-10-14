@@ -450,37 +450,18 @@ def get_pending_approvals(session_id: int, session: Session = Depends(get_sessio
     return {"cook_session_id": session_id, "approvals": approvals}
 
 
-@app.post("/cook-sessions/{session_id}/approvals/{approval_index}")
+@app.post("/cook-sessions/{session_id}/approvals/{approval_index}", deprecated=True)
 def decide_approval_legacy(
     session_id: int,
     approval_index: int,
     body: ApprovalDecision,
     session: Session = Depends(get_session)
 ):
-    """Legacy: approve/reject by line index in session notes."""
-    cook_session = session.get(CookSession, session_id)
-    if not cook_session:
-        raise HTTPException(status_code=404, detail="Cook session not found")
-    if body.decision not in ("approve", "reject"):
-        raise HTTPException(status_code=400, detail="decision must be 'approve' or 'reject'")
-
-    lines = (cook_session.notes or "").splitlines()
-    if approval_index >= len(lines) or "[APPROVAL NEEDED]" not in lines[approval_index]:
-        raise HTTPException(status_code=404, detail="Pending approval not found at that index")
-
-    tag = "[APPROVED]" if body.decision == "approve" else "[REJECTED]"
-    reason_suffix = f" (Reason: {body.reason})" if body.reason else ""
-    lines[approval_index] = lines[approval_index].replace("[APPROVAL NEEDED]", tag) + reason_suffix
-    cook_session.notes = "\n".join(lines)
-    session.add(cook_session)
-    session.commit()
-
-    return {
-        "cook_session_id": session_id,
-        "decision": body.decision,
-        "message": f"Change {'approved' if body.decision == 'approve' else 'rejected'} by household.",
-        "note": lines[approval_index]
-    }
+    """Deprecated: use POST /approvals/{id}/decide instead."""
+    raise HTTPException(
+        status_code=410,
+        detail="This endpoint is retired. Use POST /approvals/{approval_id}/decide with the structured approval workflow."
+    )
 
 
 # ---- Structured Approval Endpoints ----

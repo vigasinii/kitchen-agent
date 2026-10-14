@@ -62,12 +62,15 @@ PLANNER_TOOLS = [
     }
 ]
 
-SYSTEM_PROMPT = """You are Kitchen Agent, a meal planning assistant for a 4-person household.
+SYSTEM_PROMPT_BASE = """You are Kitchen Agent, a meal planning assistant.
 
-Members: Sarah (vegetarian), Mike (no restrictions), Emma (child, STRICT peanut allergy - never peanuts), George (grandparent, soft foods, mild spice, diabetic-friendly).
+{household_summary}
 
-Rules: Every meal safe for ALL. Vegetarian alternative for Sarah when meat is served. No peanuts ever.
-Use tools to manage plans. Be concise. No emojis. No em dashes. Use numbered lists for steps, bullets for options. Bold key terms."""
+Rules: Every meal safe for ALL members. Vegetarian alternative when meat is served. Strict allergens never included.
+Use tools to manage plans. Be concise. No emojis. No em dashes. Numbered lists for steps, bullets for options. Bold key terms."""
+
+GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+MAX_TOOL_ROUNDS = 5
 
 
 class PlannerAgent:
@@ -79,6 +82,24 @@ class PlannerAgent:
             self.client = Groq(api_key=self.api_key)
         else:
             self.client = None
+
+    def _build_system_prompt(self) -> str:
+        members = self.session.exec(select(HouseholdMember)).all()
+        if members:
+            lines = []
+            for m in members:
+                restrictions = json.loads(m.dietary_restrictions)
+                allergies = json.loads(m.allergies)
+                parts = []
+                if restrictions:
+                    parts.append(f"diet: {', '.join(restrictions)}")
+                if allergies:
+                    parts.append(f"allergies: {', '.join(allergies)} (STRICT)")
+                lines.append(f"- {m.name}: {'; '.join(parts) if parts else 'no restrictions'}")
+            summary = "Household members:\n" + "\n".join(lines)
+        else:
+            summary = "Household: no members configured yet."
+        return SYSTEM_PROMPT_BASE.format(household_summary=summary)
 
     def _get_conversation_history(self) -> List[Dict]:
         messages = self.session.exec(
@@ -124,7 +145,10 @@ class PlannerAgent:
                 }
                 for m in members
             ]
-            plan_data = generate_meal_plan(member_data, special_requests=tool_input.get("special_requests", ""))
+            try:
+                plan_data = generate_meal_plan(member_data, special_requests=tool_input.get("special_requests", ""))
+            except Exception as e:
+                return json.dumps({"error": f"Meal plan generation failed: {str(e)}. Please try again in a moment."})
             new_plan = MealPlan(
                 week_start=tool_input.get("week_start", "2026-10-14"),
                 status="planning",
@@ -201,27 +225,30 @@ class PlannerAgent:
         self._save_message("user", user_message)
         history = self._get_conversation_history()
 
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+        system_prompt = self._build_system_prompt()
+        messages = [{"role": "system", "content": system_prompt}] + history
         response_text = ""
 
+        def groq_call():
+            for attempt in range(2):
+                try:
+                    return self.client.chat.completions.create(
+                        model=GROQ_MODEL,
+                        messages=messages,
+                        tools=PLANNER_TOOLS,
+                        tool_choice="auto",
+                        max_tokens=400,
+                        timeout=30,
+                    )
+                except Exception as e:
+                    if "429" in str(e) and attempt == 0:
+                        time.sleep(5)
+                    else:
+                        raise
+
         try:
-            while True:
-                for attempt in range(3):
-                    try:
-                        response = self.client.chat.completions.create(
-                            model=GROQ_MODEL,
-                            messages=messages,
-                            tools=PLANNER_TOOLS,
-                            tool_choice="auto",
-                            max_tokens=400,
-                            timeout=30,
-                        )
-                        break
-                    except Exception as e:
-                        if "429" in str(e) and attempt < 2:
-                            time.sleep(30)
-                        else:
-                            raise
+            for round_num in range(MAX_TOOL_ROUNDS):
+                response = groq_call()
                 msg = response.choices[0].message
 
                 if msg.tool_calls:
@@ -236,12 +263,14 @@ class PlannerAgent:
                 else:
                     response_text = msg.content or ""
                     break
+            else:
+                response_text = "I reached the maximum number of steps. Please try a simpler request."
 
         except Exception as e:
             response_text = f"Error: {str(e)}"
 
         if not response_text:
-            response_text = "I processed your request but didn't generate a response. Please try again."
+            response_text = "I could not generate a response. Please try again."
 
         self._save_message("assistant", response_text)
         return response_text
