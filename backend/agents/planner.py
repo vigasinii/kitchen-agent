@@ -1,0 +1,232 @@
+import json
+import os
+from datetime import datetime
+from typing import List, Dict
+from sqlmodel import Session, select
+
+from models import HouseholdMember, MealPlan, ConversationMessage
+from tools.meal_tools import generate_meal_plan, check_ingredient_safety
+from tools.grocery import consolidate_grocery_list
+
+GROQ_MODEL = "qwen/qwen3.8-27b"
+
+PLANNER_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_household_members",
+            "description": "Get all household members with their dietary restrictions, allergies, and preferences.",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_meal_plan",
+            "description": "Create a new 7-day meal plan for the household respecting all dietary needs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "week_start": {"type": "string", "description": "ISO date string for the start of the week (YYYY-MM-DD)"},
+                    "special_requests": {"type": "string", "description": "Any special requests or theme for the week"}
+                },
+                "required": ["week_start"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_meal_plan",
+            "description": "Update a specific meal in the current plan.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plan_id": {"type": "integer", "description": "The meal plan ID"},
+                    "day": {"type": "string", "description": "Day of the week (Monday, Tuesday, etc.)"},
+                    "meal_type": {"type": "string", "description": "breakfast, lunch, or dinner"},
+                    "new_meal": {"type": "string", "description": "The new meal description"}
+                },
+                "required": ["plan_id", "day", "meal_type", "new_meal"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_plan",
+            "description": "Get the current active meal plan.",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    }
+]
+
+SYSTEM_PROMPT = """You are a Kitchen Agent, a friendly and knowledgeable household meal planning assistant for a 4-person household.
+
+The household members are:
+- Sarah (adult): Vegetarian, loves Mediterranean and Indian food
+- Mike (adult): No dietary restrictions, loves grilled meats and pasta
+- Emma (child): Peanut allergy (STRICT - never suggest peanuts), prefers kid-friendly mild foods
+- George (grandparent): Needs soft foods, mild spices, diabetic-friendly options
+
+Your role:
+1. Plan weekly meals that satisfy ALL household members simultaneously
+2. Always flag if a suggestion might conflict with dietary needs (especially Emma's peanut allergy)
+3. Be practical - suggest meals that can be adapted (e.g., chicken served separately from vegetarian portions)
+4. Be warm, encouraging, and enthusiastic about food
+5. Provide helpful cooking tips and suggest seasonal ingredients
+6. When creating plans, aim for nutritional balance and variety
+
+CRITICAL: Always check peanut safety for any nut-containing suggestions. When in doubt, avoid.
+Speak naturally and conversationally. Use the available tools to access household data and manage meal plans.
+
+RESPONSE STYLE RULES:
+- Never use emojis. No emoji characters of any kind.
+- Never use em dashes (the long dash). Use commas, periods, or colons instead.
+- Keep responses concise and scannable. Use short paragraphs.
+- For instructions or steps, always use a numbered list. One action per step.
+- For options or comparisons, use a bullet list.
+- Bold key terms and action words.
+- Never write dense walls of text. Break information into clear sections.
+- Responses should be easy to read at a glance, especially while cooking."""
+
+
+class PlannerAgent:
+    def __init__(self, db_session: Session):
+        self.session = db_session
+        self.api_key = os.getenv("GROQ_API_KEY")
+        if self.api_key:
+            from groq import Groq
+            self.client = Groq(api_key=self.api_key)
+        else:
+            self.client = None
+
+    def _get_conversation_history(self) -> List[Dict]:
+        messages = self.session.exec(
+            select(ConversationMessage)
+            .where(ConversationMessage.session_type == "planner")
+            .order_by(ConversationMessage.timestamp)
+        ).all()
+        return [{"role": m.role, "content": m.content} for m in messages[-20:]]
+
+    def _save_message(self, role: str, content: str):
+        msg = ConversationMessage(
+            session_type="planner",
+            role=role,
+            content=content,
+            timestamp=datetime.utcnow().isoformat()
+        )
+        self.session.add(msg)
+        self.session.commit()
+
+    def _execute_tool(self, tool_name: str, tool_input: Dict) -> str:
+        if tool_name == "get_household_members":
+            members = self.session.exec(select(HouseholdMember)).all()
+            result = [
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "dietary_restrictions": json.loads(m.dietary_restrictions),
+                    "allergies": json.loads(m.allergies),
+                    "preferences": json.loads(m.preferences)
+                }
+                for m in members
+            ]
+            return json.dumps(result)
+
+        elif tool_name == "create_meal_plan":
+            members = self.session.exec(select(HouseholdMember)).all()
+            member_data = [
+                {
+                    "name": m.name,
+                    "dietary_restrictions": json.loads(m.dietary_restrictions),
+                    "allergies": json.loads(m.allergies),
+                    "preferences": json.loads(m.preferences)
+                }
+                for m in members
+            ]
+            plan_data = generate_meal_plan(member_data)
+            new_plan = MealPlan(
+                week_start=tool_input.get("week_start", "2026-10-14"),
+                status="planning",
+                meals=json.dumps(plan_data["plan"])
+            )
+            self.session.add(new_plan)
+            self.session.commit()
+            self.session.refresh(new_plan)
+            return json.dumps({"plan_id": new_plan.id, "plan": plan_data["plan"], "notes": plan_data["notes"]})
+
+        elif tool_name == "update_meal_plan":
+            plan = self.session.get(MealPlan, tool_input["plan_id"])
+            if not plan:
+                return json.dumps({"error": "Plan not found"})
+            meals = json.loads(plan.meals)
+            day = tool_input["day"]
+            meal_type = tool_input["meal_type"]
+            if day in meals:
+                meals[day][meal_type] = tool_input["new_meal"]
+                plan.meals = json.dumps(meals)
+                self.session.add(plan)
+                self.session.commit()
+                return json.dumps({"success": True, "updated": f"{day} {meal_type} -> {tool_input['new_meal']}"})
+            return json.dumps({"error": f"Day {day} not found in plan"})
+
+        elif tool_name == "get_current_plan":
+            plans = self.session.exec(select(MealPlan).order_by(MealPlan.id.desc())).all()
+            if not plans:
+                return json.dumps({"error": "No meal plans found"})
+            latest = plans[0]
+            return json.dumps({
+                "id": latest.id,
+                "week_start": latest.week_start,
+                "status": latest.status,
+                "meals": json.loads(latest.meals)
+            })
+
+        return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+    def chat(self, user_message: str) -> str:
+        if not self.client:
+            return "I need a GROQ_API_KEY set in your .env file to work. Get one free at console.groq.com."
+
+        self._save_message("user", user_message)
+        history = self._get_conversation_history()
+
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+        response_text = ""
+
+        try:
+            while True:
+                response = self.client.chat.completions.create(
+                    model=GROQ_MODEL,
+                    messages=messages,
+                    tools=PLANNER_TOOLS,
+                    tool_choice="auto",
+                    max_tokens=2048,
+                )
+                msg = response.choices[0].message
+
+                if msg.tool_calls:
+                    messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": [
+                        {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                        for tc in msg.tool_calls
+                    ]})
+                    for tc in msg.tool_calls:
+                        args = json.loads(tc.function.arguments)
+                        result = self._execute_tool(tc.function.name, args)
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+                else:
+                    response_text = msg.content or ""
+                    break
+
+        except Exception as e:
+            response_text = f"Error: {str(e)}"
+
+        if not response_text:
+            response_text = "I processed your request but didn't generate a response. Please try again."
+
+        self._save_message("assistant", response_text)
+        return response_text
+
+
+
