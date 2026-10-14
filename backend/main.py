@@ -307,40 +307,67 @@ class TTSRequest(BaseModel):
 
 
 @app.post("/tts")
-def text_to_speech(request: TTSRequest):
+async def text_to_speech(request: TTSRequest):
     from fastapi.responses import Response
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="GROQ_API_KEY not set")
+    import re, io
 
     # Strip markdown for cleaner speech
-    import re
     text = request.text
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)   # bold
-    text = re.sub(r'\*(.+?)\*', r'\1', text)         # italic
-    text = re.sub(r'#{1,6}\s+', '', text)            # headers
-    text = re.sub(r'^\s*[\-\*]\s+', '', text, flags=re.MULTILINE)  # bullets
-    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)   # numbered lists
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'#{1,6}\s+', '', text)
+    text = re.sub(r'^\s*[\-\*]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
     text = text.strip()
-    # Truncate to 500 chars to stay within token limits
     if len(text) > 500:
         text = text[:497] + "..."
 
+    # Try Groq Orpheus first (highest quality)
+    api_key = os.getenv("GROQ_API_KEY")
+    if api_key:
+        try:
+            from groq import Groq
+            print(f"[TTS] trying Groq Orpheus, text length: {len(text)}")
+            client = Groq(api_key=api_key)
+            resp = client.audio.speech.create(
+                model="canopylabs/orpheus-v1-english",
+                voice=request.voice,
+                input=text,
+                response_format="wav",
+            )
+            audio_bytes = resp.read()
+            print(f"[TTS] Groq success, bytes: {len(audio_bytes)}")
+            return Response(content=audio_bytes, media_type="audio/wav")
+        except Exception as e:
+            print(f"[TTS] Groq failed: {e} — falling back to edge-tts")
+
+    # Fallback: edge-tts (Microsoft Edge neural voices, free)
     try:
-        from groq import Groq
-        print(f"[TTS] attempting, text length: {len(text)}")
-        client = Groq(api_key=api_key)
-        response = client.audio.speech.create(
-            model="canopylabs/orpheus-v1-english",
-            voice=request.voice,
-            input=text,
-            response_format="wav",
-        )
-        audio_bytes = response.read()
-        print(f"[TTS] success, bytes: {len(audio_bytes)}")
-        return Response(content=audio_bytes, media_type="audio/wav")
+        import edge_tts, asyncio
+        # Map Orpheus voice names to Edge neural voices
+        voice_map = {
+            "tara": "en-US-JennyNeural",
+            "leah": "en-US-AriaNeural",
+            "jess": "en-US-MichelleNeural",
+            "leo":  "en-US-GuyNeural",
+            "dan":  "en-US-ChristopherNeural",
+            "mia":  "en-US-MonicaNeural",
+            "zac":  "en-US-EricNeural",
+            "zoe":  "en-US-JennyNeural",
+        }
+        edge_voice = voice_map.get(request.voice, "en-US-JennyNeural")
+        print(f"[TTS] edge-tts voice: {edge_voice}")
+        communicate = edge_tts.Communicate(text, edge_voice)
+        buf = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                buf.write(chunk["data"])
+        buf.seek(0)
+        audio_bytes = buf.read()
+        print(f"[TTS] edge-tts success, bytes: {len(audio_bytes)}")
+        return Response(content=audio_bytes, media_type="audio/mpeg")
     except Exception as e:
-        print(f"[TTS] error: {e}")
+        print(f"[TTS] edge-tts failed: {e}")
         raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
 
 

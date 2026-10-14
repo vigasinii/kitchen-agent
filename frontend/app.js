@@ -1813,8 +1813,8 @@ function SettingsScreen() {
           {[
             ['Version', '1.0.0'],
             ['Backend', 'FastAPI + SQLite on Render'],
-            ['AI Model', 'Qwen 3 8B via Groq'],
-            ['Voice', 'Web Speech API (browser)'],
+            ['AI Model', 'Gemini 1.5 Flash'],
+            ['Voice', 'Orpheus (edge-tts fallback)'],
           ].map(([k,v]) => (
             <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--border)',fontSize:'.85rem'}}>
               <span style={{color:'var(--text-muted)'}}>{k}</span>
