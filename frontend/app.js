@@ -882,7 +882,7 @@ function CookScreen() {
         <select
           className="cook-select"
           value={day}
-          onChange={e => { setDay(e.target.value); setCookSession(null); }}
+          onChange={e => { setDay(e.target.value); setCookSession(null); setMessages([]); }}
         >
           {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
@@ -890,7 +890,7 @@ function CookScreen() {
         <select
           className="cook-select"
           value={mealType}
-          onChange={e => { setMealType(e.target.value); setCookSession(null); }}
+          onChange={e => { setMealType(e.target.value); setCookSession(null); setMessages([]); }}
         >
           {MEAL_TYPES.map(m => <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
         </select>
