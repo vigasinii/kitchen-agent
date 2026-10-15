@@ -3,51 +3,46 @@ from datetime import datetime
 from sqlmodel import SQLModel, Field
 import json
 
-
 class HouseholdMember(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    dietary_restrictions: str = Field(default="[]")  # JSON list
-    allergies: str = Field(default="[]")  # JSON list
-    preferences: str = Field(default="[]")  # JSON list
-
+    dietary_restrictions: str = Field(default="[]")
+    allergies: str = Field(default="[]")
+    preferences: str = Field(default="[]")
 
 class MealPlan(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    week_start: str  # ISO date string
-    status: str = Field(default="planning")  # planning/approved/executing
-    meals: str = Field(default="{}")  # JSON 7-day plan
-
+    week_start: str
+    status: str = Field(default="planning")
+    meals: str = Field(default="{}")
 
 class GroceryList(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     meal_plan_id: int = Field(foreign_key="mealplan.id")
-    items: str = Field(default="[]")  # JSON list of {name, qty, unit}
-    status: str = Field(default="pending")  # pending/ordered/delivered
-
+    items: str = Field(default="[]")
+    status: str = Field(default="pending")
 
 class CookSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     meal_plan_id: int = Field(foreign_key="mealplan.id")
     day: str
+    meal_type: str = Field(default="dinner")
     meal_name: str
-    status: str = Field(default="active")  # active/completed/cancelled
+    status: str = Field(default="active")
     notes: str = Field(default="")
-    substitutions: str = Field(default="[]")  # JSON list of {missing, substitute, approved}
-    # Outcome fields filled when session is completed
-    outcome_meal: str = Field(default="")       # what was actually cooked (may differ from plan)
-    outcome_notes: str = Field(default="")      # cook's summary of what happened
-    human_interventions: int = Field(default=0) # count of approval requests raised
-    completed_at: str = Field(default="")
+    substitutions: str = Field(default="[]")
 
+    outcome_meal: str = Field(default="")
+    outcome_notes: str = Field(default="")
+    human_interventions: int = Field(default=0)
+    completed_at: str = Field(default="")
 
 class ConversationMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    session_type: str  # planner / cook_<id>
-    role: str  # user/assistant
+    session_type: str
+    role: str
     content: str
     timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-
 
 class ApprovalRequest(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -55,13 +50,13 @@ class ApprovalRequest(SQLModel, table=True):
     meal_plan_id: int
     day: str
     meal_type: str = Field(default="")
-    issue: str                      # what problem the cook encountered
+    issue: str
     original_ingredient: str = Field(default="")
-    proposed_change: str            # what the cook wants to do
+    proposed_change: str
     reason: str = Field(default="")
     requested_by: str = Field(default="cook")
     requested_at: str
-    status: str = Field(default="pending")  # pending/approved/rejected/cancelled
+    status: str = Field(default="pending")
     decided_by: str = Field(default="")
     decided_at: str = Field(default="")
     decision_reason: str = Field(default="")

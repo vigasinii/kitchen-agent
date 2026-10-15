@@ -12,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-# Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -33,44 +32,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ---- Pydantic Request Models ----
-
 class HouseholdMemberCreate(BaseModel):
     name: str
     dietary_restrictions: List[str] = []
     allergies: List[str] = []
     preferences: List[str] = []
 
-
 class MealPlanCreate(BaseModel):
     week_start: str
     meals: Optional[dict] = None
 
-
 class CookSessionCreate(BaseModel):
     meal_plan_id: int
     day: str
+    meal_type: str = "dinner"
     meal_name: str
-
 
 class PlannerChatRequest(BaseModel):
     message: str
-
 
 class CookChatRequest(BaseModel):
     message: str
     cook_session_id: int
 
-
-# ---- Startup ----
-
 @app.on_event("startup")
 def on_startup():
     init_db()
-
-
-# ---- Household Routes ----
 
 @app.get("/household")
 def get_household(session: Session = Depends(get_session)):
@@ -86,7 +73,6 @@ def get_household(session: Session = Depends(get_session)):
         for m in members
     ]
 
-
 @app.post("/household")
 def add_member(member: HouseholdMemberCreate, session: Session = Depends(get_session)):
     new_member = HouseholdMember(
@@ -100,9 +86,6 @@ def add_member(member: HouseholdMemberCreate, session: Session = Depends(get_ses
     session.refresh(new_member)
     return {"id": new_member.id, "name": new_member.name}
 
-
-# ---- Meal Plan Routes ----
-
 @app.get("/meal-plans")
 def list_meal_plans(session: Session = Depends(get_session)):
     plans = session.exec(select(MealPlan).order_by(MealPlan.id.desc())).all()
@@ -110,7 +93,6 @@ def list_meal_plans(session: Session = Depends(get_session)):
         {"id": p.id, "week_start": p.week_start, "status": p.status}
         for p in plans
     ]
-
 
 @app.get("/meal-plans/{plan_id}")
 def get_meal_plan(plan_id: int, session: Session = Depends(get_session)):
@@ -123,7 +105,6 @@ def get_meal_plan(plan_id: int, session: Session = Depends(get_session)):
         "status": plan.status,
         "meals": json.loads(plan.meals)
     }
-
 
 @app.post("/meal-plans")
 def create_meal_plan(data: MealPlanCreate, session: Session = Depends(get_session)):
@@ -139,7 +120,6 @@ def create_meal_plan(data: MealPlanCreate, session: Session = Depends(get_sessio
     session.refresh(plan)
     return {"id": plan.id, "week_start": plan.week_start, "status": plan.status}
 
-
 @app.put("/meal-plans/{plan_id}/approve")
 def approve_meal_plan(plan_id: int, session: Session = Depends(get_session)):
     plan = session.get(MealPlan, plan_id)
@@ -149,9 +129,6 @@ def approve_meal_plan(plan_id: int, session: Session = Depends(get_session)):
     session.add(plan)
     session.commit()
     return {"id": plan.id, "status": plan.status, "message": "Meal plan approved!"}
-
-
-# ---- Grocery List Routes ----
 
 @app.get("/grocery-lists/{meal_plan_id}")
 def get_grocery_list(meal_plan_id: int, session: Session = Depends(get_session)):
@@ -167,7 +144,6 @@ def get_grocery_list(meal_plan_id: int, session: Session = Depends(get_session))
         "status": grocery.status
     }
 
-
 @app.post("/grocery-lists/{meal_plan_id}/generate")
 def generate_grocery_list(meal_plan_id: int, session: Session = Depends(get_session)):
     plan = session.get(MealPlan, meal_plan_id)
@@ -177,7 +153,6 @@ def generate_grocery_list(meal_plan_id: int, session: Session = Depends(get_sess
     meals = json.loads(plan.meals)
     items = consolidate_grocery_list(meals)
 
-    # Check if grocery list exists
     existing = session.exec(
         select(GroceryList).where(GroceryList.meal_plan_id == meal_plan_id)
     ).first()
@@ -206,7 +181,6 @@ def generate_grocery_list(meal_plan_id: int, session: Session = Depends(get_sess
         "status": grocery.status
     }
 
-
 @app.post("/grocery-lists/{meal_plan_id}/order")
 def order_groceries(meal_plan_id: int, session: Session = Depends(get_session)):
     grocery = session.exec(
@@ -224,9 +198,6 @@ def order_groceries(meal_plan_id: int, session: Session = Depends(get_session)):
 
     return result
 
-
-# ---- Cook Session Routes ----
-
 @app.get("/cook-sessions")
 def list_cook_sessions(session: Session = Depends(get_session)):
     sessions = session.exec(select(CookSession).order_by(CookSession.id.desc())).all()
@@ -235,6 +206,7 @@ def list_cook_sessions(session: Session = Depends(get_session)):
             "id": s.id,
             "meal_plan_id": s.meal_plan_id,
             "day": s.day,
+            "meal_type": s.meal_type,
             "meal_name": s.meal_name,
             "status": s.status,
             "outcome_meal": s.outcome_meal,
@@ -245,12 +217,12 @@ def list_cook_sessions(session: Session = Depends(get_session)):
         for s in sessions
     ]
 
-
 @app.post("/cook-sessions")
 def start_cook_session(data: CookSessionCreate, session: Session = Depends(get_session)):
     cook_session = CookSession(
         meal_plan_id=data.meal_plan_id,
         day=data.day,
+        meal_type=data.meal_type,
         meal_name=data.meal_name,
         status="active"
     )
@@ -260,10 +232,10 @@ def start_cook_session(data: CookSessionCreate, session: Session = Depends(get_s
     return {
         "id": cook_session.id,
         "day": cook_session.day,
+        "meal_type": cook_session.meal_type,
         "meal_name": cook_session.meal_name,
         "status": cook_session.status
     }
-
 
 @app.get("/cook-sessions/{session_id}")
 def get_cook_session(session_id: int, session: Session = Depends(get_session)):
@@ -280,9 +252,6 @@ def get_cook_session(session_id: int, session: Session = Depends(get_session)):
         "substitutions": json.loads(cook_session.substitutions)
     }
 
-
-# ---- Chat Routes ----
-
 @app.post("/chat/planner")
 def chat_planner(request: PlannerChatRequest, session: Session = Depends(get_session)):
     from agents.planner import PlannerAgent
@@ -297,7 +266,6 @@ def chat_planner(request: PlannerChatRequest, session: Session = Depends(get_ses
             status_code=status,
             detail={"message": "AI provider unavailable. Please try again in a moment.", "error_category": e.category},
         )
-
 
 @app.post("/chat/cook")
 def chat_cook(request: CookChatRequest, session: Session = Depends(get_session)):
@@ -314,17 +282,11 @@ def chat_cook(request: CookChatRequest, session: Session = Depends(get_session))
             detail={"message": "AI provider unavailable. Please try again in a moment.", "error_category": e.category},
         )
 
-
-# ---- TTS Endpoint ----
-
-# Tracks when Groq Orpheus quota recovers (monotonic seconds). Module-level so it
-# persists across requests within a single Render worker process.
 _tts_groq_unavailable_until: float = 0.0
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "hannah"  # Orpheus voices: autumn, diana, hannah, austin, daniel, troy
-
+    voice: str = "hannah"
 
 @app.post("/tts")
 async def text_to_speech(request: TTSRequest):
@@ -332,7 +294,6 @@ async def text_to_speech(request: TTSRequest):
     from fastapi.responses import Response
     import re, io, time as _time
 
-    # Strip markdown for cleaner speech
     text = request.text
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'\*(.+?)\*', r'\1', text)
@@ -343,7 +304,6 @@ async def text_to_speech(request: TTSRequest):
     if len(text) > 500:
         text = text[:497] + "..."
 
-    # Try Groq Orpheus first — skip if daily quota is still cooling down
     api_key = os.getenv("GROQ_API_KEY")
     groq_quota_ok = _time.monotonic() >= _tts_groq_unavailable_until
     if api_key and groq_quota_ok:
@@ -363,9 +323,9 @@ async def text_to_speech(request: TTSRequest):
         except Exception as e:
             err_str = str(e)
             print(f"[TTS] Groq failed: {e} — falling back to edge-tts")
-            # Parse Retry-After for daily quota exhaustion (429)
+
             if "429" in err_str:
-                cooldown = 3600.0  # default: retry in 1 hour
+                cooldown = 3600.0
                 try:
                     headers = getattr(getattr(e, "response", None), "headers", None) or {}
                     if "retry-after" in headers:
@@ -382,10 +342,9 @@ async def text_to_speech(request: TTSRequest):
         remaining = _tts_groq_unavailable_until - _time.monotonic()
         print(f"[TTS] Groq quota cooling down, {remaining:.0f}s remaining — using edge-tts")
 
-    # Fallback: edge-tts (Microsoft Edge neural voices, free)
     try:
         import edge_tts, asyncio
-        # Map Orpheus voice names to Edge neural voices
+
         voice_map = {
             "hannah":  "en-US-JennyNeural",
             "diana":   "en-US-AriaNeural",
@@ -408,9 +367,6 @@ async def text_to_speech(request: TTSRequest):
     except Exception as e:
         print(f"[TTS] edge-tts failed: {e}")
         raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
-
-
-# ---- Conversation History ----
 
 @app.get("/conversations/{session_type}")
 def get_conversations(session_type: str, session: Session = Depends(get_session)):
@@ -440,14 +396,10 @@ def clear_conversations(session_type: str, session: Session = Depends(get_sessio
     session.commit()
     return {"cleared": len(messages)}
 
-
-# ---- Cook Session Completion ----
-
 class SessionOutcome(BaseModel):
     outcome_meal: str
     outcome_notes: str
     followed_plan: bool = True
-
 
 @app.post("/cook-sessions/{session_id}/complete")
 def complete_cook_session(session_id: int, body: SessionOutcome, session: Session = Depends(get_session)):
@@ -477,9 +429,6 @@ def complete_cook_session(session_id: int, body: SessionOutcome, session: Sessio
         "message": "Session outcome recorded."
     }
 
-
-# ---- Operational Analytics ----
-
 @app.get("/analytics")
 def get_analytics(session: Session = Depends(get_session)):
     """Operational metrics: automation rate, common exceptions, intervention frequency."""
@@ -504,7 +453,6 @@ def get_analytics(session: Session = Depends(get_session)):
     sessions_with_subs = sum(1 for s in completed if json.loads(s.substitutions))
     deviated = sum(1 for s in completed if s.outcome_meal and s.outcome_meal != s.meal_name)
 
-    # Collect all substitutions made
     all_subs = []
     for s in completed:
         subs = json.loads(s.substitutions)
@@ -526,13 +474,9 @@ def get_analytics(session: Session = Depends(get_session)):
         )
     }
 
-
-# ---- Cook Approval Workflow (legacy, text-parsing based) ----
-
 class ApprovalDecision(BaseModel):
-    decision: str  # "approve" or "reject"
+    decision: str
     reason: Optional[str] = None
-
 
 @app.get("/cook-sessions/{session_id}/approvals")
 def get_pending_approvals(session_id: int, session: Session = Depends(get_session)):
@@ -541,7 +485,6 @@ def get_pending_approvals(session_id: int, session: Session = Depends(get_sessio
     if not cook_session:
         raise HTTPException(status_code=404, detail="Cook session not found")
 
-    # Return structured ApprovalRequest records if available
     structured = session.exec(
         select(ApprovalRequest).where(ApprovalRequest.cook_session_id == session_id)
     ).all()
@@ -563,7 +506,6 @@ def get_pending_approvals(session_id: int, session: Session = Depends(get_sessio
             ]
         }
 
-    # Fallback: legacy text parsing
     notes = cook_session.notes or ""
     approvals = []
     for i, line in enumerate(notes.splitlines()):
@@ -573,7 +515,6 @@ def get_pending_approvals(session_id: int, session: Session = Depends(get_sessio
             tag = "[APPROVED]" if "[APPROVED]" in line else "[REJECTED]"
             approvals.append({"index": i, "request": line.replace(tag, "").strip(), "status": tag[1:-1].lower()})
     return {"cook_session_id": session_id, "approvals": approvals}
-
 
 @app.post("/cook-sessions/{session_id}/approvals/{approval_index}", deprecated=True)
 def decide_approval_legacy(
@@ -587,9 +528,6 @@ def decide_approval_legacy(
         status_code=410,
         detail="This endpoint is retired. Use POST /approvals/{approval_id}/decide with the structured approval workflow."
     )
-
-
-# ---- Structured Approval Endpoints ----
 
 @app.get("/approvals")
 def list_approvals(status: Optional[str] = None, session: Session = Depends(get_session)):
@@ -619,7 +557,6 @@ def list_approvals(status: Optional[str] = None, session: Session = Depends(get_
         for a in approvals
     ]
 
-
 @app.get("/approvals/{approval_id}")
 def get_approval(approval_id: int, session: Session = Depends(get_session)):
     """Get a single approval request."""
@@ -644,12 +581,10 @@ def get_approval(approval_id: int, session: Session = Depends(get_session)):
         "decision_reason": approval.decision_reason,
     }
 
-
 class ApprovalDecideBody(BaseModel):
-    decision: str  # "approve" or "reject"
+    decision: str
     reason: Optional[str] = ""
     decided_by: Optional[str] = "household"
-
 
 @app.post("/approvals/{approval_id}/decide")
 def decide_approval(approval_id: int, body: ApprovalDecideBody, session: Session = Depends(get_session)):
@@ -670,7 +605,7 @@ def decide_approval(approval_id: int, body: ApprovalDecideBody, session: Session
     grocery_regenerated = False
 
     if body.decision == "approve" and approval.day and approval.meal_type and approval.proposed_change:
-        # Safety validation before applying any meal substitution
+
         if not approval.meal_plan_id:
             raise HTTPException(status_code=400, detail="Cannot apply change: meal_plan_id not set on this approval")
 
@@ -718,7 +653,6 @@ def decide_approval(approval_id: int, body: ApprovalDecideBody, session: Session
         approval.decision_reason = body.reason or ""
         session.add(approval)
 
-        # If approved and proposed_change looks like a meal swap, update the plan
         if approved_as == "approved" and approval.day and approval.meal_type and approval.proposed_change:
             if not approval.meal_plan_id:
                 raise HTTPException(status_code=400, detail="Cannot apply change: meal_plan_id not set")
@@ -732,7 +666,6 @@ def decide_approval(approval_id: int, body: ApprovalDecideBody, session: Session
                     plan.meals = json.dumps(meals)
                     session.add(plan)
 
-                    # Regenerate grocery list
                     existing_grocery = session.exec(
                         select(GroceryList).where(GroceryList.meal_plan_id == approval.meal_plan_id)
                     ).first()
@@ -760,13 +693,9 @@ def decide_approval(approval_id: int, body: ApprovalDecideBody, session: Session
         "message": f"Request {'approved' if approval.status == 'approved' else 'rejected'} by {approval.decided_by}."
     }
 
-
-# ---- Static Files ----
-
 frontend_path = Path(__file__).parent.parent / "frontend"
 if frontend_path.exists():
     app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
-
 
 if __name__ == "__main__":
     import uvicorn

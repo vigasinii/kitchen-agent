@@ -770,6 +770,18 @@ function CookScreen() {
         setPlan(pd.data.meals || {});
       }
     }).catch(() => {});
+
+    // Restore most recent active cook session on mount
+    axios.get(`${API}/cook-sessions`).then(r => {
+      const sessions = r.data || [];
+      const active = sessions.find(s => s.status === 'active') || sessions[0];
+      if (active) {
+        setCookSession(active);
+        if (active.day) setDay(active.day);
+        if (active.meal_type) setMealType(active.meal_type);
+        if (active.meal_name) setMealName(active.meal_name);
+      }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -805,6 +817,7 @@ function CookScreen() {
       const r = await axios.post(`${API}/cook-sessions`, {
         meal_plan_id: mealPlanId,
         day,
+        meal_type: mealType,
         meal_name: mealName || `${mealType} on ${day}`,
       });
       setCookSession(r.data);
