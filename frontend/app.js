@@ -649,12 +649,7 @@ function OverviewScreen({ onNavigate }) {
 /* ===================================================================
    PLANNER SCREEN
    =================================================================== */
-const PLANNER_CHIPS = [
-  { label: 'Plan next week', message: 'Plan next week' },
-  { label: 'Make dinners lighter', message: 'Make dinners lighter' },
-  { label: 'Check restrictions', message: 'Show the current meal plan and check it for dietary restriction or allergy violations. Do NOT create a new plan.' },
-  { label: 'Replace a meal', message: 'I want to replace a meal in the current plan. Ask me which day and meal type.' },
-];
+const PLANNER_CHIPS = [];
 
 function SpeakingBanner() {
   const [speaking, setSpeaking] = useState(isSpeaking);
