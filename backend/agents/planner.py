@@ -268,8 +268,11 @@ class PlannerAgent:
                         print(f"[PLANNER] skipping duplicate state-changing tool: {tc.function.name}")
                     else:
                         result = self._execute_tool(tc.function.name, args)
-                        print(f"[PLANNER] tool={tc.function.name} result_len={len(result)}")
-                        if tc.function.name in STATE_CHANGING_TOOLS:
+                        result_obj = json.loads(result) if result else {}
+                        success = "error" not in result_obj
+                        print(f"[PLANNER] step={round_num+1} tool={tc.function.name} success={success} result_len={len(result)}")
+                        # Only cache successful state-changing calls; errors must be retried
+                        if tc.function.name in STATE_CHANGING_TOOLS and success:
                             executed_state_tools[dedup_key] = result
 
                     messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
