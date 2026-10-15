@@ -13,9 +13,9 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 _DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 _DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 
-GEMINI_TIMEOUT = int(os.getenv("GEMINI_TIMEOUT", "25"))
-GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "20"))
-OVERALL_DEADLINE = int(os.getenv("OVERALL_DEADLINE", "55"))
+GEMINI_TIMEOUT = int(os.getenv("GEMINI_TIMEOUT", "10"))
+GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "12"))
+OVERALL_DEADLINE = int(os.getenv("OVERALL_DEADLINE", "26"))  # under Render's 30s free-tier limit
 
 _TRANSIENT_CODES = {429, 502, 503, 504}
 _AUTH_CODES = {401, 403}
@@ -177,6 +177,7 @@ class LLMProvider:
                     last_error = e
                     last_category = cat
                     _log_call(pname, model, attempt, elapsed, status="error", error_category=cat)
+                    print(f"[LLM] error detail: {type(e).__name__}: {str(e)[:200]}")
 
                     if cat in ("auth", "invalid"):
                         break  # no retry for this provider
