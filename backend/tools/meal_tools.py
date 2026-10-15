@@ -1,7 +1,6 @@
 import json
-import os
 import time
-from typing import List, Dict, Any
+from typing import List, Dict
 
 
 ALLERGEN_MAP = {
@@ -79,70 +78,57 @@ def _build_constraint_summary(household_members: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-
-
 def generate_meal_plan(household_members: List[Dict], special_requests: str = "") -> Dict:
-    """Generate a 7-day meal plan using the LLM. Raises on failure — no silent fallback."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not set. Cannot generate a meal plan.")
+    """Generate a 7-day meal plan using the shared LLM provider. Raises on failure."""
+    from llm_provider import LLMProvider
 
     constraint_summary = _build_constraint_summary(household_members)
     special_note = f"\nSpecial requests: {special_requests}" if special_requests else ""
 
-    prompt = f"""Generate a 7-day meal plan as JSON. Household: {constraint_summary}{special_note}
+    prompt = f"""Generate a 7-day meal plan as JSON. Household:\n{constraint_summary}{special_note}
 Rules: safe for all members; no allergens; vegetarian alternative when meat is served (note inline); soft/low-sugar for diabetic members; varied realistic home cooking.
-Reply ONLY with JSON: {{"Monday":{{"breakfast":"...","lunch":"...","dinner":"..."}},"Tuesday":{{...}},"Wednesday":{{...}},"Thursday":{{...}},"Friday":{{...}},"Saturday":{{...}},"Sunday":{{...}}}}"""
+Reply ONLY with valid JSON, no markdown fences:
+{{"Monday":{{"breakfast":"...","lunch":"...","dinner":"..."}},"Tuesday":{{...}},"Wednesday":{{...}},"Thursday":{{...}},"Friday":{{...}},"Saturday":{{...}},"Sunday":{{...}}}}"""
 
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key, base_url=GEMINI_BASE_URL)
-    last_error = None
-    for attempt in range(2):
-        try:
-            t0 = time.time()
-            response = client.chat.completions.create(
-                model=GEMINI_MODEL,
-                messages=[
-                    {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=600,
-                temperature=0.7,
-                timeout=15,
-            )
-            elapsed = round(time.time() - t0, 2)
-            raw = response.choices[0].message.content.strip()
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            raw = raw.strip()
-            plan = json.loads(raw)
-            days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-            meals = ["breakfast", "lunch", "dinner"]
-            missing_days = [d for d in days if d not in plan]
-            if missing_days:
-                raise ValueError(f"Plan missing days: {missing_days}")
-            for day in days:
-                missing_meals = [m for m in meals if m not in plan.get(day, {})]
-                if missing_meals:
-                    raise ValueError(f"{day} missing meals: {missing_meals}")
-            restrictions_used = [r for m in household_members for r in m.get("dietary_restrictions", [])]
-            allergies_used = [a for m in household_members for a in m.get("allergies", [])]
-            return {
-                "plan": plan,
-                "notes": f"AI-generated in {elapsed}s. Restrictions: {restrictions_used}. Allergens excluded: {allergies_used}.",
-            }
-        except Exception as e:
-            last_error = e
-            if "429" in str(e) and attempt == 0:
-                time.sleep(1)
-            else:
-                break
+    provider = LLMProvider()
+    t0 = time.time()
+    resp, pname, model = provider.call(
+        messages=[
+            {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only. No markdown, no explanation."},
+            {"role": "user", "content": prompt},
+        ],
+        tools=[],
+        max_tokens=700,
+    )
+    elapsed = round(time.time() - t0, 2)
+    raw = resp.choices[0].message.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
 
-    raise RuntimeError(f"Meal plan generation failed: {last_error}")
+    try:
+        plan = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"LLM returned invalid JSON: {e}. Raw: {raw[:200]}")
+
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    meals = ["breakfast", "lunch", "dinner"]
+    missing_days = [d for d in days if d not in plan]
+    if missing_days:
+        raise ValueError(f"Plan missing days: {missing_days}")
+    for day in days:
+        missing_meals = [m for m in meals if m not in plan.get(day, {})]
+        if missing_meals:
+            raise ValueError(f"{day} missing meals: {missing_meals}")
+
+    restrictions_used = [r for m in household_members for r in m.get("dietary_restrictions", [])]
+    allergies_used = [a for m in household_members for a in m.get("allergies", [])]
+    return {
+        "plan": plan,
+        "notes": f"Generated by {pname}/{model} in {elapsed}s. Restrictions: {restrictions_used}. Allergens excluded: {allergies_used}.",
+    }
 
 
 def _trigger_is_negated(meal_lower: str, trigger: str) -> bool:

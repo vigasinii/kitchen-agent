@@ -229,11 +229,13 @@ class PlannerAgent:
         system_prompt = self._build_system_prompt()
         messages = [{"role": "system", "content": system_prompt}] + history
         response_text = ""
-        executed_state_tools: dict = {}  # key -> result, prevents duplicate writes
+        executed_state_tools: dict = {}  # key -> result, prevents duplicate DB writes
+        all_tool_calls: dict = {}  # key -> call count, detects read-tool loops
 
         for round_num in range(MAX_TOOL_ROUNDS):
             resp, provider, model = self.provider.call(messages, PLANNER_TOOLS)
             msg = resp.choices[0].message
+            print(f"[PLANNER] round={round_num+1} provider={provider} model={model} has_tool_calls={bool(msg.tool_calls)}")
 
             if msg.tool_calls:
                 messages.append({
@@ -248,19 +250,32 @@ class PlannerAgent:
                         for tc in msg.tool_calls
                     ],
                 })
+                stale = False
                 for tc in msg.tool_calls:
                     args = json.loads(tc.function.arguments)
                     dedup_key = (tc.function.name, tc.function.arguments)
+
+                    # Count every call; break loop if same tool+args called 3+ times
+                    all_tool_calls[dedup_key] = all_tool_calls.get(dedup_key, 0) + 1
+                    if all_tool_calls[dedup_key] >= 3:
+                        print(f"[PLANNER] loop detected: {tc.function.name} called {all_tool_calls[dedup_key]}x with same args")
+                        stale = True
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps({"error": "repeated call detected, stopping loop"})})
+                        continue
 
                     if tc.function.name in STATE_CHANGING_TOOLS and dedup_key in executed_state_tools:
                         result = executed_state_tools[dedup_key]
                         print(f"[PLANNER] skipping duplicate state-changing tool: {tc.function.name}")
                     else:
                         result = self._execute_tool(tc.function.name, args)
+                        print(f"[PLANNER] tool={tc.function.name} result_len={len(result)}")
                         if tc.function.name in STATE_CHANGING_TOOLS:
                             executed_state_tools[dedup_key] = result
 
                     messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+
+                if stale:
+                    break
             else:
                 response_text = msg.content or ""
                 break
