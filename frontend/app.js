@@ -197,28 +197,42 @@ async function speak(text) {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
 
   const clean = cleanForTTS(text);
+  setSpeaking(true);
 
+  // Start browser TTS immediately for zero-latency playback
+  let browserUtterance = null;
+  let browserFinished = false;
+  if (window.speechSynthesis) {
+    browserUtterance = new SpeechSynthesisUtterance(clean);
+    browserUtterance.rate = 1.0;
+    browserUtterance.onend = () => { browserFinished = true; if (!currentAudio) setSpeaking(false); };
+    window.speechSynthesis.speak(browserUtterance);
+  }
+
+  // Fetch Groq audio in parallel; switch to it when ready
   try {
     const res = await fetch(`${API}/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: clean, voice: 'hannah' }),
     });
-    if (!res.ok) throw new Error('TTS failed');
+    if (!res.ok) throw new Error('TTS fetch failed');
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    currentAudio = new Audio(url);
-    setSpeaking(true);
-    currentAudio.play();
-    currentAudio.onended = () => { URL.revokeObjectURL(url); setSpeaking(false); };
+    // Cancel browser voice and switch to Groq only if browser hasn't finished yet
+    if (!browserFinished) {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      const url = URL.createObjectURL(blob);
+      currentAudio = new Audio(url);
+      currentAudio.play();
+      currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; setSpeaking(false); };
+    } else {
+      // Browser already done; nothing to switch
+      setSpeaking(false);
+    }
   } catch (err) {
-    console.warn('Orpheus TTS failed, falling back to browser TTS:', err);
-    if (!window.speechSynthesis) return;
-    const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.rate = 1.0;
-    setSpeaking(true);
-    utterance.onend = () => setSpeaking(false);
-    window.speechSynthesis.speak(utterance);
+    console.warn('Orpheus TTS failed, using browser TTS only:', err);
+    if (browserFinished) setSpeaking(false);
+    // Browser TTS is already playing, let it finish
   }
 }
 
