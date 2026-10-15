@@ -1793,9 +1793,16 @@ function ApprovalsScreen() {
 
   const decide = async (id, decision) => {
     try {
+      const approval = approvals.find(a => a.id === id);
       await axios.post(`${API}/approvals/${id}/decide`, { decision, decided_by: 'household' });
       addToast(decision === 'approve' ? 'Change approved and applied to plan' : 'Change rejected', decision === 'approve' ? 'success' : 'info');
       load();
+      if (approval) {
+        const msg = decision === 'approve'
+          ? `The household has approved your request: "${approval.proposed_change}". Please continue with this change.`
+          : `The household has rejected your request: "${approval.proposed_change}". Reason: ${approval.reason || 'No reason given'}. Please proceed with the original plan.`;
+        await axios.post(`${API}/chat/cook`, { message: msg, cook_session_id: approval.cook_session_id });
+      }
     } catch (e) {
       const detail = e.response?.data?.detail;
       const msg = typeof detail === 'object' ? detail.error : (detail || 'Decision failed');
