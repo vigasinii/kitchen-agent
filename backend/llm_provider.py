@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 _DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
-_DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+_DEFAULT_GROQ_MODEL = "compound-beta"
 
 GEMINI_TIMEOUT = int(os.getenv("GEMINI_TIMEOUT", "10"))
 GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "12"))
