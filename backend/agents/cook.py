@@ -336,7 +336,18 @@ class CookAgent:
         cook_session = self.session.get(CookSession, cook_session_id)
         context = ""
         if cook_session:
-            context = f"\n\nCurrent session: Day={cook_session.day}, Meal={cook_session.meal_name}, Status={cook_session.status}"
+            from models import MealPlan
+            from sqlmodel import select as _select
+            latest_plan = self.session.exec(_select(MealPlan).order_by(MealPlan.id.desc())).first()
+            meal_plan_id = latest_plan.id if latest_plan else "unknown"
+            context = (
+                f"\n\nCurrent session context (use these IDs in every tool call — never ask the user for them):"
+                f"\n  cook_session_id = {cook_session_id}"
+                f"\n  meal_plan_id = {meal_plan_id}"
+                f"\n  Day = {cook_session.day}"
+                f"\n  Meal = {cook_session.meal_name}"
+                f"\n  Status = {cook_session.status}"
+            )
 
         system_prompt = self._build_system_prompt() + context
         messages = [{"role": "system", "content": system_prompt}] + history
