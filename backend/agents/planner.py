@@ -37,26 +37,14 @@ PLANNER_TOOLS = [
         "type": "function",
         "function": {
             "name": "batch_update_meal_plan",
-            "description": "Update multiple meals in the current plan at once. Use this instead of calling update_meal_plan repeatedly. Validates all changes before committing any.",
+            "description": "Update multiple meals at once. Encode all updates as a JSON string in updates_json. Example: '[{\"day\":\"Monday\",\"meal_type\":\"dinner\",\"new_meal\":\"Grilled fish\"},{\"day\":\"Tuesday\",\"meal_type\":\"dinner\",\"new_meal\":\"Lentil soup\"}]'",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "plan_id": {"type": "integer", "description": "The meal plan ID"},
-                    "updates": {
-                        "type": "array",
-                        "description": "List of meal updates to apply",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "day": {"type": "string", "description": "Day of the week (Monday, Tuesday, etc.)"},
-                                "meal_type": {"type": "string", "description": "breakfast, lunch, or dinner"},
-                                "new_meal": {"type": "string", "description": "The new meal description"}
-                            },
-                            "required": ["day", "meal_type", "new_meal"]
-                        }
-                    }
+                    "updates_json": {"type": "string", "description": "JSON array string of updates, each with day, meal_type, new_meal fields"}
                 },
-                "required": ["plan_id", "updates"]
+                "required": ["plan_id", "updates_json"]
             }
         }
     },
@@ -133,7 +121,7 @@ class PlannerAgent:
             .where(ConversationMessage.session_type == "planner")
             .order_by(ConversationMessage.timestamp)
         ).all()
-        return [{"role": m.role, "content": m.content} for m in messages[-8:]]
+        return [{"role": m.role, "content": m.content} for m in messages[-4:]]
 
     def _save_message(self, role: str, content: str):
         msg = ConversationMessage(
@@ -173,8 +161,9 @@ class PlannerAgent:
             ]
             try:
                 plan_data = generate_meal_plan(member_data, special_requests=tool_input.get("special_requests", ""))
-            except Exception:
-                return json.dumps({"error": "Meal plan generation failed. Please try again in a moment."})
+            except Exception as e:
+                print(f"[PLANNER] generate_meal_plan failed: {type(e).__name__}: {str(e)[:300]}")
+                return json.dumps({"error": f"Meal plan generation failed: {type(e).__name__}. Do not retry — report this to the user."})
             week_start = tool_input.get("week_start") or datetime.utcnow().strftime("%Y-%m-%d")
             new_plan = MealPlan(
                 week_start=week_start,
@@ -235,7 +224,11 @@ class PlannerAgent:
             plan = self.session.get(MealPlan, tool_input["plan_id"])
             if not plan:
                 return json.dumps({"error": "Plan not found"})
-            updates = tool_input.get("updates", [])
+            raw_updates = tool_input.get("updates_json", "")
+            try:
+                updates = json.loads(raw_updates) if isinstance(raw_updates, str) else raw_updates
+            except (json.JSONDecodeError, TypeError) as e:
+                return json.dumps({"error": f"Invalid updates_json: {e}"})
             if not updates:
                 return json.dumps({"error": "No updates provided"})
 
@@ -338,7 +331,12 @@ class PlannerAgent:
                 })
                 stale = False
                 for tc in msg.tool_calls:
-                    args = json.loads(tc.function.arguments)
+                    try:
+                        args = json.loads(tc.function.arguments)
+                    except (json.JSONDecodeError, TypeError) as e:
+                        print(f"[PLANNER] malformed tool args for {tc.function.name}: {e}")
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps({"error": "Malformed tool arguments — please simplify your request."})})
+                        continue
                     dedup_key = (tc.function.name, tc.function.arguments)
 
                     # Break loop if same tool+args called 3+ times

@@ -48,6 +48,9 @@ def _error_category(e: Exception) -> str:
         return "auth"
     if any(str(c) in s for c in _NOT_FOUND_CODES):
         return "not_found"
+    # tool_use_failed: model generated malformed tool args — schema problem, not model unavailability
+    if "tool_use_failed" in s or "Failed to parse tool call" in s:
+        return "tool_error"
     if any(str(c) in s for c in _INVALID_CODES):
         return "invalid"
     if any(str(c) in s for c in _TRANSIENT_CODES):
@@ -59,9 +62,18 @@ def _error_category(e: Exception) -> str:
 
 def _retry_delay(e: Exception) -> float:
     """Return a delay in seconds, honouring Retry-After when present."""
-    m = re.search(r"retry.after[\"\\s:]+(\d+)", str(e), re.IGNORECASE)
-    base = float(m.group(1)) if m else (0.4 + random.random() * 0.6)
-    return min(base, 10.0)
+    # Check SDK exception attributes (Groq/OpenAI expose response headers)
+    try:
+        headers = getattr(getattr(e, "response", None), "headers", None) or {}
+        if "retry-after" in headers:
+            return min(float(headers["retry-after"]), 30.0)
+        if "x-ratelimit-reset-requests" in headers:
+            return min(float(headers["x-ratelimit-reset-requests"]), 30.0)
+    except Exception:
+        pass
+    m = re.search(r"retry.after[\"'\s:]+(\d+\.?\d*)", str(e), re.IGNORECASE)
+    base = float(m.group(1)) if m else (0.5 + random.random() * 1.0)
+    return min(base, 30.0)
 
 
 def _log_call(
@@ -111,6 +123,7 @@ class LLMProvider:
         tools: List[Dict],
         max_tokens: int = 800,
         deadline: Optional[float] = None,
+        json_mode: bool = False,
     ) -> Tuple[Any, str, str]:
         """
         Call the LLM with automatic model fallback.
@@ -154,6 +167,8 @@ class LLMProvider:
                     if tools:
                         create_kwargs["tools"] = tools
                         create_kwargs["tool_choice"] = "auto"
+                    if json_mode:
+                        create_kwargs["response_format"] = {"type": "json_object"}
                     resp = client.chat.completions.create(**create_kwargs)
                     elapsed = time.monotonic() - t0
                     tool_count = len(resp.choices[0].message.tool_calls or [])
@@ -172,10 +187,15 @@ class LLMProvider:
                     if cat == "auth":
                         raise ProviderError(str(e), cat)
 
-                    # Model not found / invalid: skip to next model without retry
-                    if cat in ("not_found", "invalid"):
-                        print(f"[LLM] model {model} unavailable ({cat}), trying next model")
+                    # Model not found: skip to next model without retry
+                    if cat == "not_found":
+                        print(f"[LLM] model {model} not found, trying next model")
                         break
+
+                    # Invalid request or tool schema error: no point retrying same model or next model
+                    if cat in ("invalid", "tool_error"):
+                        print(f"[LLM] request error ({cat}), not retrying")
+                        raise ProviderError(str(e), cat)
 
                     # Transient: retry once, then try next model
                     if attempt == 1 and cat == "transient":

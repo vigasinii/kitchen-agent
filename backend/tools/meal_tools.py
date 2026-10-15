@@ -94,14 +94,21 @@ Reply ONLY with valid JSON, no markdown fences:
     t0 = time.time()
     resp, pname, model = provider.call(
         messages=[
-            {"role": "system", "content": "You are a meal planning assistant. Always respond with valid JSON only. No markdown, no explanation."},
+            {"role": "system", "content": "You are a meal planning assistant. Respond with valid JSON only."},
             {"role": "user", "content": prompt},
         ],
         tools=[],
-        max_tokens=700,
+        max_tokens=800,
+        json_mode=True,
     )
     elapsed = round(time.time() - t0, 2)
-    raw = resp.choices[0].message.content.strip()
+    raw = (resp.choices[0].message.content or "").strip()
+    print(f"[MEAL_GEN] provider={pname} model={model} elapsed={elapsed}s raw_len={len(raw)}")
+
+    if not raw:
+        raise RuntimeError("LLM returned empty content for meal plan generation")
+
+    # Strip markdown fences if present (json_mode should prevent this, but be defensive)
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -111,7 +118,7 @@ Reply ONLY with valid JSON, no markdown fences:
     try:
         plan = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"LLM returned invalid JSON: {e}. Raw: {raw[:200]}")
+        raise RuntimeError(f"LLM returned invalid JSON: {e}. Raw: {raw[:300]}")
 
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     meals = ["breakfast", "lunch", "dinner"]
