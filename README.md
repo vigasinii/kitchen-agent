@@ -5,7 +5,7 @@ A voice-first household meal planning and cooking assistant. Two AI agents handl
 ## Stack
 
 - **Backend**: FastAPI + SQLite (via SQLModel)
-- **AI**: Groq API (`qwen/qwen3.8-27b`) with tool-use loops
+- **AI**: Groq API (`openai/gpt-oss-120b` primary, `openai/gpt-oss-20b` fallback) with tool-use loops
 - **Frontend**: React 18 (CDN, no build step), Web Speech API
 - **Deploy**: Render (backend) + Vercel (frontend)
 
@@ -17,10 +17,10 @@ A voice-first household meal planning and cooking assistant. Two AI agents handl
 cd backend
 pip install -r requirements.txt
 cp .env.example .env      # add your GROQ_API_KEY
-uvicorn main:app --port 8888
+uvicorn main:app --port 8000
 ```
 
-Open `http://localhost:8888` in your browser.
+Open `frontend/index.html` in your browser (or serve the frontend folder with any static server).
 
 ## Running evaluations
 
@@ -57,6 +57,8 @@ A 7-day meal plan and grocery list are seeded on first launch so the UI is popul
 **Meal Plan tab**: 7-day grid, approve the plan to lock it in.
 
 **Grocery tab**: consolidated shopping list, click Order via Instamart to simulate ordering.
+
+**Approvals tab**: household approval requests raised by Annie appear here. Approve or reject each one — approving a substitution updates the meal plan automatically.
 
 ## Project structure
 
