@@ -611,7 +611,7 @@ function OverviewScreen({ onNavigate }) {
         <button className="overview-action-card" onClick={() => onNavigate('cook')}>
           <div className="overview-action-icon" style={{ background: '#fef3e2' }}><Icon name="ChefHat" size={20} color="#e65100" /></div>
           <div className="overview-action-label">Start Cooking</div>
-          <div className="overview-action-sub">Step-by-step with Arjun</div>
+          <div className="overview-action-sub">Step-by-step with Annie</div>
         </button>
         <button className="overview-action-card" onClick={() => onNavigate('grocery')}>
           <div className="overview-action-icon" style={{ background: '#e3f2fd' }}><Icon name="ShoppingCart" size={20} color="#1565c0" /></div>
@@ -990,6 +990,7 @@ function CookScreen() {
             <div ref={messagesEndRef} />
           </div>
           <div className="cook-composer">
+            <SpeakingBanner />
             <VoiceComposerInline
               onSend={sendMessage}
               loading={loading}
@@ -1857,7 +1858,7 @@ function ApprovalsScreen() {
       {loading ? <div className="empty-state">Loading...</div> : (
         <>
           {approvals.length === 0 && (
-            <div className="empty-state">No approval requests yet. When Arjun needs a substitution approved, it will appear here.</div>
+            <div className="empty-state">No approval requests yet. When Annie needs a substitution approved, it will appear here.</div>
           )}
           {pending.length > 0 && (
             <section className="approvals-section">
