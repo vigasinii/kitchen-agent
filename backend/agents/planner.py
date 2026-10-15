@@ -200,6 +200,8 @@ class PlannerAgent:
             if day in meals:
                 meals[day][meal_type] = tool_input["new_meal"]
                 plan.meals = json.dumps(meals)
+                if plan.status == "approved":
+                    plan.status = "planning"
                 self.session.add(plan)
                 self.session.commit()
                 # Auto-regenerate grocery list if one exists for this plan
@@ -257,6 +259,8 @@ class PlannerAgent:
                     skipped.append(day)
 
             plan.meals = json.dumps(meals)
+            if plan.status == "approved":
+                plan.status = "planning"
             self.session.add(plan)
             self.session.commit()
 
