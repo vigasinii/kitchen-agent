@@ -317,6 +317,10 @@ def chat_cook(request: CookChatRequest, session: Session = Depends(get_session))
 
 # ---- TTS Endpoint ----
 
+# Tracks when Groq Orpheus quota recovers (monotonic seconds). Module-level so it
+# persists across requests within a single Render worker process.
+_tts_groq_unavailable_until: float = 0.0
+
 class TTSRequest(BaseModel):
     text: str
     voice: str = "hannah"  # Orpheus voices: autumn, diana, hannah, austin, daniel, troy
@@ -324,8 +328,9 @@ class TTSRequest(BaseModel):
 
 @app.post("/tts")
 async def text_to_speech(request: TTSRequest):
+    global _tts_groq_unavailable_until
     from fastapi.responses import Response
-    import re, io
+    import re, io, time as _time
 
     # Strip markdown for cleaner speech
     text = request.text
@@ -338,9 +343,10 @@ async def text_to_speech(request: TTSRequest):
     if len(text) > 500:
         text = text[:497] + "..."
 
-    # Try Groq Orpheus first (highest quality)
+    # Try Groq Orpheus first — skip if daily quota is still cooling down
     api_key = os.getenv("GROQ_API_KEY")
-    if api_key:
+    groq_quota_ok = _time.monotonic() >= _tts_groq_unavailable_until
+    if api_key and groq_quota_ok:
         try:
             from groq import Groq
             print(f"[TTS] trying Groq Orpheus, text length: {len(text)}")
@@ -355,7 +361,26 @@ async def text_to_speech(request: TTSRequest):
             print(f"[TTS] Groq success, bytes: {len(audio_bytes)}")
             return Response(content=audio_bytes, media_type="audio/wav")
         except Exception as e:
+            err_str = str(e)
             print(f"[TTS] Groq failed: {e} — falling back to edge-tts")
+            # Parse Retry-After for daily quota exhaustion (429)
+            if "429" in err_str:
+                cooldown = 3600.0  # default: retry in 1 hour
+                try:
+                    headers = getattr(getattr(e, "response", None), "headers", None) or {}
+                    if "retry-after" in headers:
+                        cooldown = min(float(headers["retry-after"]), 86400.0)
+                except Exception:
+                    pass
+                import re as _re
+                m = _re.search(r"retry.after[\"'\s:]+(\d+\.?\d*)", err_str, _re.IGNORECASE)
+                if m:
+                    cooldown = min(float(m.group(1)), 86400.0)
+                _tts_groq_unavailable_until = _time.monotonic() + cooldown
+                print(f"[TTS] Groq 429 — skipping for {cooldown:.0f}s")
+    elif not groq_quota_ok:
+        remaining = _tts_groq_unavailable_until - _time.monotonic()
+        print(f"[TTS] Groq quota cooling down, {remaining:.0f}s remaining — using edge-tts")
 
     # Fallback: edge-tts (Microsoft Edge neural voices, free)
     try:

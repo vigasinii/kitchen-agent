@@ -94,12 +94,12 @@ Reply ONLY with valid JSON, no markdown fences:
     t0 = time.time()
     resp, pname, model = provider.call(
         messages=[
-            {"role": "system", "content": "You are a meal planning assistant. Respond with valid JSON only."},
+            {"role": "system", "content": "You are a meal planning assistant. Respond with valid JSON only. No markdown, no explanation — raw JSON object only."},
             {"role": "user", "content": prompt},
         ],
         tools=[],
-        max_tokens=800,
-        json_mode=True,
+        max_tokens=1200,
+        json_mode=False,
     )
     elapsed = round(time.time() - t0, 2)
     raw = (resp.choices[0].message.content or "").strip()
