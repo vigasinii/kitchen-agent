@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 _DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
-_DEFAULT_GROQ_MODEL = "compound-beta"
+_DEFAULT_GROQ_MODEL = "llama3-70b-8192"
 
 GEMINI_TIMEOUT = int(os.getenv("GEMINI_TIMEOUT", "10"))
 GROQ_TIMEOUT = int(os.getenv("GROQ_TIMEOUT", "12"))
@@ -129,12 +129,12 @@ class LLMProvider:
         if deadline is None:
             deadline = time.monotonic() + OVERALL_DEADLINE
 
-        # Groq first (reliable, free, fast); Gemini as fallback
+        # Gemini primary (fast when available), Groq as fallback
         providers = []
-        if self.groq_key:
-            providers.append(("groq", self.groq_model, GROQ_TIMEOUT, self._groq))
         if self.gemini_key:
             providers.append(("gemini", self.gemini_model, GEMINI_TIMEOUT, self._gemini))
+        if self.groq_key:
+            providers.append(("groq", self.groq_model, GROQ_TIMEOUT, self._groq))
 
         if not providers:
             raise ProviderError(
