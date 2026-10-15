@@ -144,14 +144,16 @@ class LLMProvider:
                 t0 = time.monotonic()
 
                 try:
-                    resp = client.chat.completions.create(
+                    create_kwargs: Dict = dict(
                         model=model,
                         messages=messages,
-                        tools=tools if tools else None,
-                        tool_choice="auto" if tools else None,
                         max_tokens=max_tokens,
                         timeout=actual_timeout,
                     )
+                    if tools:
+                        create_kwargs["tools"] = tools
+                        create_kwargs["tool_choice"] = "auto"
+                    resp = client.chat.completions.create(**create_kwargs)
                     elapsed = time.monotonic() - t0
                     tool_count = len(resp.choices[0].message.tool_calls or [])
                     _log_call("groq", model, attempt, elapsed, tool_calls=tool_count)
