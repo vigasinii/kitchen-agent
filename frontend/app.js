@@ -1,19 +1,9 @@
-/* =============================================================
-   Kitchen Agent - Frontend Application
-   React 18 + Babel JSX, all API calls to http://localhost:8888
-   ============================================================= */
-
 const { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } = React;
 
 const API = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
   ? "http://localhost:8888"
   : "https://kitchen-agent-1sqb.onrender.com";
 
-/* ===================================================================
-   INLINE SVG ICONS
-   Paths sourced from Lucide icon set (https://lucide.dev)
-   Rendered as inline SVG so no runtime DOM manipulation needed.
-   =================================================================== */
 const ICON_PATHS = {
   LayoutDashboard: `<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>`,
   MessageSquare: `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`,
@@ -62,9 +52,6 @@ function Icon({ name, size = 18, strokeWidth = 1.75, className = '', style = {} 
   );
 }
 
-/* ===================================================================
-   TOAST SYSTEM
-   =================================================================== */
 const ToastContext = createContext(null);
 
 function ToastProvider({ children }) {
@@ -108,11 +95,8 @@ function useToast() {
   return useContext(ToastContext);
 }
 
-/* ===================================================================
-   VOICE HOOK
-   =================================================================== */
 function useVoice(onResult) {
-  const [voiceState, setVoiceState] = useState('idle'); // idle | listening | processing
+  const [voiceState, setVoiceState] = useState('idle'); 
   const recognitionRef = useRef(null);
 
   const transcriptRef = useRef('');
@@ -144,7 +128,7 @@ function useVoice(onResult) {
       if (e.error !== 'no-speech') setVoiceState('idle');
     };
     recognition.onend = () => {
-      // Restart if still in listening state (handles browser auto-stop on pause)
+      
       if (recognitionRef.current && recognitionRef.current._active) {
         try { recognition.start(); } catch {}
       }
@@ -175,6 +159,7 @@ function useVoice(onResult) {
 
 let currentAudio = null;
 let isSpeaking = false;
+let currentSpeaker = 'Riya';
 const speakingListeners = new Set();
 
 function setSpeaking(val) {
@@ -192,18 +177,19 @@ function cleanForTTS(text) {
     .trim();
 }
 
-async function speak(text) {
+async function speak(text, voice = 'hannah', speaker = 'Riya') {
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   if (window.speechSynthesis) window.speechSynthesis.cancel();
 
   const clean = cleanForTTS(text);
+  currentSpeaker = speaker;
 
   try {
     setSpeaking(true);
     const res = await fetch(`${API}/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: clean, voice: 'hannah' }),
+      body: JSON.stringify({ text: clean, voice }),
     });
     if (!res.ok) throw new Error('TTS failed');
     const blob = await res.blob();
@@ -223,9 +209,6 @@ function stopSpeaking() {
   setSpeaking(false);
 }
 
-/* ===================================================================
-   HELPERS
-   =================================================================== */
 function formatTime(ts) {
   if (!ts) return "";
   try {
@@ -254,15 +237,11 @@ function getInitials(name) {
   return name.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2);
 }
 
-// Detect if markdown content has a meal plan table and render as cards
 function renderMessageContent(content) {
   const html = marked.parse(content);
   return html;
 }
 
-/* ===================================================================
-   CHAT MESSAGE COMPONENT
-   =================================================================== */
 function ChatMessage({ message, onRetry }) {
   const isUser = message.role === 'user';
   const contentHtml = useMemo(() => {
@@ -303,9 +282,6 @@ function ChatMessage({ message, onRetry }) {
   );
 }
 
-/* ===================================================================
-   VOICE COMPOSER COMPONENT
-   =================================================================== */
 function VoiceComposer({ onSend, loading, placeholder, chips }) {
   const [input, setInput] = useState('');
   const textareaRef = useRef(null);
@@ -335,7 +311,6 @@ function VoiceComposer({ onSend, loading, placeholder, chips }) {
     onSend(msg);
   };
 
-  // Auto-resize textarea
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -411,9 +386,6 @@ function VoiceComposer({ onSend, loading, placeholder, chips }) {
   );
 }
 
-/* ===================================================================
-   SIDEBAR COMPONENT
-   =================================================================== */
 const NAV_ITEMS = [
   { id: 'overview',   label: 'Overview',          icon: 'LayoutDashboard' },
   { id: 'planner',    label: 'AI Meal Planner',    icon: 'MessageSquare'  },
@@ -460,9 +432,6 @@ function Sidebar({ activeScreen, onNavigate }) {
   );
 }
 
-/* ===================================================================
-   MOBILE NAV COMPONENT
-   =================================================================== */
 const MOBILE_NAV_ITEMS = [
   { id: 'overview',  label: 'Home',    icon: 'LayoutDashboard' },
   { id: 'planner',   label: 'Planner', icon: 'MessageSquare'  },
@@ -490,9 +459,6 @@ function MobileNav({ activeScreen, onNavigate }) {
   );
 }
 
-/* ===================================================================
-   OVERVIEW SCREEN
-   =================================================================== */
 function OverviewScreen({ onNavigate }) {
   const [members, setMembers] = useState([]);
   const [activePlan, setActivePlan] = useState(null);
@@ -507,7 +473,7 @@ function OverviewScreen({ onNavigate }) {
       axios.get(`${API}/meal-plans`).then(async r => {
         if (r.data.length > 0) {
           const plan = await axios.get(`${API}/meal-plans/${r.data[0].id}`).then(r2 => r2.data);
-          // Try to get grocery status
+          
           try {
             const g = await axios.get(`${API}/grocery-lists/${r.data[0].id}`);
             return { plan, groceryStatus: g.data.status || 'pending' };
@@ -561,7 +527,7 @@ function OverviewScreen({ onNavigate }) {
   return (
     <div className="screen overview-screen">
 
-      {/* Hero */}
+      {}
       <div className="overview-hero">
         <div className="overview-hero-left">
           <div className="overview-greeting-line">{getGreeting()}</div>
@@ -584,7 +550,7 @@ function OverviewScreen({ onNavigate }) {
         </div>
       </div>
 
-      {/* Today's meals */}
+      {}
       <div className="section-label">Today — {today}</div>
       <div className="overview-today-grid">
         {['breakfast', 'lunch', 'dinner'].map(mealType => {
@@ -600,7 +566,7 @@ function OverviewScreen({ onNavigate }) {
         })}
       </div>
 
-      {/* Quick actions */}
+      {}
       <div className="section-label">Quick actions</div>
       <div className="overview-actions-grid">
         <button className="overview-action-card" onClick={() => onNavigate('planner')}>
@@ -625,7 +591,7 @@ function OverviewScreen({ onNavigate }) {
         </button>
       </div>
 
-      {/* Approve nudge */}
+      {}
       {activePlan && activePlan.status !== 'approved' && (
         <div className="attention-card" style={{ marginTop: 20 }}>
           <div className="attention-icon"><Icon name="AlertTriangle" size={18} /></div>
@@ -649,17 +615,19 @@ const PLANNER_CHIPS = [];
 
 function SpeakingBanner() {
   const [speaking, setSpeaking] = useState(isSpeaking);
+  const [speaker, setSpeaker] = useState(currentSpeaker);
   useEffect(() => {
     speakingListeners.add(setSpeaking);
     return () => speakingListeners.delete(setSpeaking);
   }, []);
+  useEffect(() => { if (isSpeaking) setSpeaker(currentSpeaker); }, [speaking]);
   if (!speaking) return null;
   return (
     <div className="speaking-banner" onClick={stopSpeaking}>
       <span className="speaking-wave">
         <span /><span /><span /><span />
       </span>
-      Riya is speaking — tap to stop
+      {speaker} is speaking — tap to stop
     </div>
   );
 }
@@ -697,7 +665,7 @@ function PlannerScreen() {
       const res = await axios.post(`${API}/chat/planner`, { message: msg });
       const reply = res.data.response;
       setMessages(prev => [...prev, { role: 'assistant', content: reply, time: new Date().toISOString() }]);
-      speak(reply);
+      speak(reply, 'hannah', 'Riya');
     } catch (err) {
       const status = err.response?.status;
       const isProviderDown = status === 503 || status === 502;
@@ -866,7 +834,7 @@ function CookScreen() {
       });
       const reply = res.data.response;
       setMessages(prev => [...prev, { role: 'assistant', content: reply, time: new Date().toISOString() }]);
-      speak(reply);
+      speak(reply, 'diana', 'Annie');
     } catch (err) {
       const status = err.response?.status;
       const isProviderDown = status === 503 || status === 502;
@@ -1974,4 +1942,3 @@ function App() {
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<App />);
-
