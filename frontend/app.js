@@ -785,12 +785,13 @@ function CookScreen() {
   }, []);
 
   useEffect(() => {
+    if (cookSession) return;
     if (plan && plan[day] && plan[day][mealType]) {
       setMealName(plan[day][mealType]);
     } else {
       setMealName('');
     }
-  }, [plan, day, mealType]);
+  }, [plan, day, mealType, cookSession]);
 
   useEffect(() => {
     if (cookSession) {
@@ -1784,7 +1785,11 @@ function ApprovalsScreen() {
       .finally(() => setLoading(false));
   };
 
-  React.useEffect(() => { load(); }, []);
+  React.useEffect(() => {
+    load();
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const decide = async (id, decision) => {
     try {
