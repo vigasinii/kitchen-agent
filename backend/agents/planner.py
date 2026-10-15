@@ -205,7 +205,6 @@ class PlannerAgent:
                 # Auto-regenerate grocery list if one exists for this plan
                 from models import GroceryList
                 from sqlmodel import select as sql_select
-                from tools.grocery import consolidate_grocery_list
                 existing_grocery = self.session.exec(
                     sql_select(GroceryList).where(GroceryList.meal_plan_id == plan.id)
                 ).first()
@@ -264,14 +263,14 @@ class PlannerAgent:
             # Regenerate grocery list if one exists
             from models import GroceryList
             from sqlmodel import select as sql_select
-            existing_grocery = self.session.exec(
+            existing_grocery_b = self.session.exec(
                 sql_select(GroceryList).where(GroceryList.meal_plan_id == plan.id)
             ).first()
-            if existing_grocery:
+            if existing_grocery_b:
                 items = consolidate_grocery_list(meals)
-                existing_grocery.items = json.dumps(items)
-                existing_grocery.status = "pending"
-                self.session.add(existing_grocery)
+                existing_grocery_b.items = json.dumps(items)
+                existing_grocery_b.status = "pending"
+                self.session.add(existing_grocery_b)
                 self.session.commit()
 
             return json.dumps({
@@ -312,7 +311,7 @@ class PlannerAgent:
         completed_successfully = False
 
         for round_num in range(MAX_TOOL_ROUNDS):
-            resp, provider, model = self.provider.call(messages, PLANNER_TOOLS)
+            resp, provider, model = self.provider.call(messages, PLANNER_TOOLS, max_tokens=1200)
             msg = resp.choices[0].message
             print(f"[PLANNER] round={round_num+1} provider={provider} model={model} has_tool_calls={bool(msg.tool_calls)}")
 
