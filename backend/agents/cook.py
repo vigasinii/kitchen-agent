@@ -124,8 +124,8 @@ Your personality:
 - Short, numbered steps when guiding. One thing at a time.
 - Honest about trade-offs: "This will change the texture a bit, but it'll still be good."
 
-Workflow: get the planned meal, guide step by step, handle problems as they come, flag anything big for household approval, record what was actually cooked at the end.
-Allergens are non-negotiable. Use flag_household_approval_needed for significant changes. Always end with complete_session.
+Workflow: get the planned meal, guide step by step, handle problems as they come, flag ingredient changes for household approval, record what was actually cooked at the end.
+Allergens are non-negotiable. ALWAYS use flag_household_approval_needed when any ingredient is being substituted or skipped — even minor ones. The household must approve every substitution before you proceed. After flagging, tell the cook to check the Approvals tab and wait for the decision. Always end with complete_session.
 No emojis. No em dashes. Numbered steps for instructions. Bullets for options."""
 
 SUBSTITUTION_MAP = {
@@ -141,7 +141,6 @@ SUBSTITUTION_MAP = {
     "bread crumbs": ["crushed crackers", "rolled oats", "crushed rice cakes"],
     "sugar": ["honey", "maple syrup", "stevia (good for George)"],
 }
-
 
 class CookAgent:
     def __init__(self, db_session: Session):
@@ -253,7 +252,7 @@ class CookAgent:
             cook_session = self.session.get(CookSession, cook_session_id)
             if not cook_session:
                 return json.dumps({"error": "Cook session not found"})
-            # Count approval requests from both notes (legacy) and ApprovalRequest table
+
             notes = cook_session.notes or ""
             notes_count = notes.count("[APPROVAL NEEDED]") + notes.count("[APPROVED]") + notes.count("[REJECTED]")
             db_count = len(self.session.exec(
@@ -288,14 +287,13 @@ class CookAgent:
             approval_id = None
 
             if cook_session:
-                # Legacy notes-based tracking
+
                 note = f"[APPROVAL NEEDED] {tool_input['issue']} - Proposed: {tool_input['proposed_change']}"
                 existing = cook_session.notes or ""
                 cook_session.notes = (existing + "\n" + note).strip()
                 self.session.add(cook_session)
                 self.session.commit()
 
-                # Structured ApprovalRequest record
                 approval = ApprovalRequest(
                     cook_session_id=cook_session_id,
                     meal_plan_id=tool_input.get("meal_plan_id") or cook_session.meal_plan_id,
