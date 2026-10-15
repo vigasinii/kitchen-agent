@@ -1,15 +1,12 @@
 import json
 import os
-import time
 from datetime import datetime
 from typing import List, Dict
 from sqlmodel import Session, select
 
 from models import HouseholdMember, MealPlan, CookSession, ConversationMessage, ApprovalRequest
 from tools.meal_tools import check_ingredient_safety
-
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+from llm_provider import LLMProvider, ProviderError, STATE_CHANGING_TOOLS
 
 COOK_TOOLS = [
     {
@@ -149,12 +146,7 @@ SUBSTITUTION_MAP = {
 class CookAgent:
     def __init__(self, db_session: Session):
         self.session = db_session
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        if self.api_key:
-            from openai import OpenAI
-            self.client = OpenAI(api_key=self.api_key, base_url=GEMINI_BASE_URL)
-        else:
-            self.client = None
+        self.provider = LLMProvider()
 
     def _get_conversation_history(self, cook_session_id: int) -> List[Dict]:
         session_tag = f"cook_{cook_session_id}"
@@ -334,9 +326,10 @@ class CookAgent:
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
     def chat(self, user_message: str, cook_session_id: int) -> str:
-        if not self.client:
-            return "I need a GEMINI_API_KEY set in your environment to work."
-
+        """
+        Returns the agent response text.
+        Raises ProviderError when all LLM providers fail unrecoverably.
+        """
         self._save_message("user", user_message, cook_session_id)
         history = self._get_conversation_history(cook_session_id)
 
@@ -348,46 +341,43 @@ class CookAgent:
         system_prompt = self._build_system_prompt() + context
         messages = [{"role": "system", "content": system_prompt}] + history
         response_text = ""
+        executed_state_tools: dict = {}
 
-        def gemini_call():
-            for attempt in range(2):
-                try:
-                    return self.client.chat.completions.create(
-                        model=GEMINI_MODEL,
-                        messages=messages,
-                        tools=COOK_TOOLS,
-                        tool_choice="auto",
-                        max_tokens=800,
-                        timeout=30,
-                    )
-                except Exception as e:
-                    if "429" in str(e) and attempt == 0:
-                        time.sleep(2)
-                    else:
-                        raise
+        for round_num in range(MAX_TOOL_ROUNDS):
+            resp, provider, model = self.provider.call(messages, COOK_TOOLS)
+            msg = resp.choices[0].message
 
-        try:
-            for round_num in range(MAX_TOOL_ROUNDS):
-                response = gemini_call()
-                msg = response.choices[0].message
-
-                if msg.tool_calls:
-                    messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": [
-                        {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+            if msg.tool_calls:
+                messages.append({
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }
                         for tc in msg.tool_calls
-                    ]})
-                    for tc in msg.tool_calls:
-                        args = json.loads(tc.function.arguments)
-                        result = self._execute_tool(tc.function.name, args)
-                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-                else:
-                    response_text = msg.content or ""
-                    break
-            else:
-                response_text = "I reached the maximum number of steps. Please try a simpler request."
+                    ],
+                })
+                for tc in msg.tool_calls:
+                    args = json.loads(tc.function.arguments)
+                    dedup_key = (tc.function.name, tc.function.arguments)
 
-        except Exception:
-            response_text = "Something went wrong. Please try again in a moment."
+                    if tc.function.name in STATE_CHANGING_TOOLS and dedup_key in executed_state_tools:
+                        result = executed_state_tools[dedup_key]
+                        print(f"[COOK] skipping duplicate state-changing tool: {tc.function.name}")
+                    else:
+                        result = self._execute_tool(tc.function.name, args)
+                        if tc.function.name in STATE_CHANGING_TOOLS:
+                            executed_state_tools[dedup_key] = result
+
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+            else:
+                response_text = msg.content or ""
+                break
+        else:
+            response_text = "I reached the maximum number of steps. Please try a simpler request."
 
         if not response_text:
             response_text = "I could not generate a response. Please try again."

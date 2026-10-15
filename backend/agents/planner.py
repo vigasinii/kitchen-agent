@@ -1,6 +1,5 @@
 import json
 import os
-import time
 from datetime import datetime
 from typing import List, Dict
 from sqlmodel import Session, select
@@ -8,9 +7,7 @@ from sqlmodel import Session, select
 from models import HouseholdMember, MealPlan, ConversationMessage
 from tools.meal_tools import generate_meal_plan, check_ingredient_safety, validate_meal_against_household
 from tools.grocery import consolidate_grocery_list
-
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+from llm_provider import LLMProvider, ProviderError, STATE_CHANGING_TOOLS
 
 PLANNER_TOOLS = [
     {
@@ -77,19 +74,13 @@ Your personality:
 Hard rules: every meal safe for ALL members. Strict allergens never included. Vegetarian alternative whenever meat is served.
 Use tools to fetch and update plans. No emojis. No em dashes. Numbered lists for steps, bullets for options."""
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "5"))
 
 
 class PlannerAgent:
     def __init__(self, db_session: Session):
         self.session = db_session
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        if self.api_key:
-            from openai import OpenAI
-            self.client = OpenAI(api_key=self.api_key, base_url=GEMINI_BASE_URL)
-        else:
-            self.client = None
+        self.provider = LLMProvider()
 
     def _build_system_prompt(self) -> str:
         members = self.session.exec(select(HouseholdMember)).all()
@@ -228,57 +219,53 @@ class PlannerAgent:
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
     def chat(self, user_message: str) -> str:
-        if not self.client:
-            return "I need a GEMINI_API_KEY set in your environment to work."
-
+        """
+        Returns the agent response text.
+        Raises ProviderError when all LLM providers fail unrecoverably.
+        """
         self._save_message("user", user_message)
         history = self._get_conversation_history()
 
         system_prompt = self._build_system_prompt()
         messages = [{"role": "system", "content": system_prompt}] + history
         response_text = ""
+        executed_state_tools: dict = {}  # key -> result, prevents duplicate writes
 
-        def gemini_call():
-            for attempt in range(2):
-                try:
-                    return self.client.chat.completions.create(
-                        model=GEMINI_MODEL,
-                        messages=messages,
-                        tools=PLANNER_TOOLS,
-                        tool_choice="auto",
-                        max_tokens=800,
-                        timeout=30,
-                    )
-                except Exception as e:
-                    if "429" in str(e) and attempt == 0:
-                        time.sleep(2)
-                    else:
-                        raise
+        for round_num in range(MAX_TOOL_ROUNDS):
+            resp, provider, model = self.provider.call(messages, PLANNER_TOOLS)
+            msg = resp.choices[0].message
 
-        try:
-            for round_num in range(MAX_TOOL_ROUNDS):
-                response = gemini_call()
-                msg = response.choices[0].message
-
-                if msg.tool_calls:
-                    messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": [
-                        {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+            if msg.tool_calls:
+                messages.append({
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }
                         for tc in msg.tool_calls
-                    ]})
-                    for tc in msg.tool_calls:
-                        args = json.loads(tc.function.arguments)
-                        result = self._execute_tool(tc.function.name, args)
-                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-                else:
-                    response_text = msg.content or ""
-                    break
-            else:
-                response_text = "I reached the maximum number of steps. Please try a simpler request."
+                    ],
+                })
+                for tc in msg.tool_calls:
+                    args = json.loads(tc.function.arguments)
+                    dedup_key = (tc.function.name, tc.function.arguments)
 
-        except Exception as e:
-            import traceback
-            print(f"[PLANNER ERROR] {e}\n{traceback.format_exc()}")
-            response_text = "Something went wrong. Please try again in a moment."
+                    if tc.function.name in STATE_CHANGING_TOOLS and dedup_key in executed_state_tools:
+                        result = executed_state_tools[dedup_key]
+                        print(f"[PLANNER] skipping duplicate state-changing tool: {tc.function.name}")
+                    else:
+                        result = self._execute_tool(tc.function.name, args)
+                        if tc.function.name in STATE_CHANGING_TOOLS:
+                            executed_state_tools[dedup_key] = result
+
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+            else:
+                response_text = msg.content or ""
+                break
+        else:
+            response_text = "I reached the maximum number of steps. Please try a simpler request."
 
         if not response_text:
             response_text = "I could not generate a response. Please try again."

@@ -268,7 +268,7 @@ function renderMessageContent(content) {
 /* ===================================================================
    CHAT MESSAGE COMPONENT
    =================================================================== */
-function ChatMessage({ message }) {
+function ChatMessage({ message, onRetry }) {
   const isUser = message.role === 'user';
   const contentHtml = useMemo(() => {
     if (isUser) return null;
@@ -288,6 +288,18 @@ function ChatMessage({ message }) {
             />
           )}
         </div>
+        {message.retryMsg && onRetry && (
+          <button
+            onClick={() => onRetry(message.retryMsg)}
+            style={{
+              marginTop: 8, padding: '6px 14px', fontSize: '.8rem',
+              background: 'var(--primary)', color: '#fff', border: 'none',
+              borderRadius: 6, cursor: 'pointer', fontWeight: 600,
+            }}
+          >
+            Retry
+          </button>
+        )}
         {message.time && (
           <div className="message-time">{formatTime(message.time)}</div>
         )}
@@ -696,9 +708,17 @@ function PlannerScreen() {
       setMessages(prev => [...prev, { role: 'assistant', content: reply, time: new Date().toISOString() }]);
       speak(reply);
     } catch (err) {
-      const errMsg = err.response?.data?.detail || 'Connection error. Is the backend running?';
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${errMsg}`, time: new Date().toISOString() }]);
-      addToast('Failed to send message', 'error');
+      const status = err.response?.status;
+      const isProviderDown = status === 503 || status === 502;
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: isProviderDown
+          ? 'The AI service is temporarily unavailable. You can retry your message.'
+          : 'Connection error. Is the backend running?',
+        retryMsg: isProviderDown ? msg : null,
+        time: new Date().toISOString(),
+      }]);
+      addToast(isProviderDown ? 'AI provider unavailable' : 'Failed to send message', 'error');
     } finally {
       setLoading(false);
     }
@@ -739,7 +759,7 @@ function PlannerScreen() {
           </div>
         )}
         {messages.map((m, i) => (
-          <ChatMessage key={i} message={m} />
+          <ChatMessage key={i} message={m} onRetry={sendMessage} />
         ))}
         {loading && (
           <div className="typing-indicator">
@@ -857,9 +877,17 @@ function CookScreen() {
       setMessages(prev => [...prev, { role: 'assistant', content: reply, time: new Date().toISOString() }]);
       speak(reply);
     } catch (err) {
-      const errMsg = err.response?.data?.detail || 'Connection error';
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${errMsg}`, time: new Date().toISOString() }]);
-      addToast('Failed to send message', 'error');
+      const status = err.response?.status;
+      const isProviderDown = status === 503 || status === 502;
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: isProviderDown
+          ? 'The AI service is temporarily unavailable. You can retry your message.'
+          : 'Connection error. Is the backend running?',
+        retryMsg: isProviderDown ? msg : null,
+        time: new Date().toISOString(),
+      }]);
+      addToast(isProviderDown ? 'AI provider unavailable' : 'Failed to send message', 'error');
     } finally {
       setLoading(false);
     }
@@ -959,7 +987,7 @@ function CookScreen() {
               </div>
             )}
             {messages.map((m, i) => (
-              <ChatMessage key={i} message={m} />
+              <ChatMessage key={i} message={m} onRetry={sendMessage} />
             ))}
             {loading && (
               <div className="typing-indicator">

@@ -286,17 +286,33 @@ def get_cook_session(session_id: int, session: Session = Depends(get_session)):
 @app.post("/chat/planner")
 def chat_planner(request: PlannerChatRequest, session: Session = Depends(get_session)):
     from agents.planner import PlannerAgent
+    from llm_provider import ProviderError
     agent = PlannerAgent(db_session=session)
-    response = agent.chat(request.message)
-    return {"response": response}
+    try:
+        response = agent.chat(request.message)
+        return {"response": response, "ok": True}
+    except ProviderError as e:
+        status = 503 if e.category in ("transient", "config") else 502
+        raise HTTPException(
+            status_code=status,
+            detail={"message": "AI provider unavailable. Please try again in a moment.", "error_category": e.category},
+        )
 
 
 @app.post("/chat/cook")
 def chat_cook(request: CookChatRequest, session: Session = Depends(get_session)):
     from agents.cook import CookAgent
+    from llm_provider import ProviderError
     agent = CookAgent(db_session=session)
-    response = agent.chat(request.message, request.cook_session_id)
-    return {"response": response}
+    try:
+        response = agent.chat(request.message, request.cook_session_id)
+        return {"response": response, "ok": True}
+    except ProviderError as e:
+        status = 503 if e.category in ("transient", "config") else 502
+        raise HTTPException(
+            status_code=status,
+            detail={"message": "AI provider unavailable. Please try again in a moment.", "error_category": e.category},
+        )
 
 
 # ---- TTS Endpoint ----
