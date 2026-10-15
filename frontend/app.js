@@ -421,6 +421,7 @@ const NAV_ITEMS = [
   { id: 'mealplan',   label: 'Weekly Meal Plan',   icon: 'CalendarDays'   },
   { id: 'grocery',    label: 'Grocery List',       icon: 'ShoppingCart'   },
   { id: 'household',  label: 'Household',          icon: 'Users'          },
+  { id: 'approvals',  label: 'Approvals',          icon: 'Bell'           },
   { id: 'analytics',  label: 'Analytics',          icon: 'BarChart2'      },
 ];
 
@@ -1786,6 +1787,97 @@ function ColdStartBanner() {
 }
 
 /* ===================================================================
+   APPROVALS SCREEN
+   =================================================================== */
+function ApprovalsScreen() {
+  const [approvals, setApprovals] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const { addToast } = useToast();
+
+  const load = () => {
+    setLoading(true);
+    axios.get(`${API}/approvals`)
+      .then(r => setApprovals(r.data.approvals || []))
+      .catch(() => addToast('Could not load approvals', 'error'))
+      .finally(() => setLoading(false));
+  };
+
+  React.useEffect(() => { load(); }, []);
+
+  const decide = async (id, decision) => {
+    try {
+      await axios.post(`${API}/approvals/${id}/decide`, { decision, decided_by: 'household' });
+      addToast(decision === 'approve' ? 'Change approved and applied to plan' : 'Change rejected', decision === 'approve' ? 'success' : 'info');
+      load();
+    } catch (e) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === 'object' ? detail.error : (detail || 'Decision failed');
+      addToast(msg, 'error');
+    }
+  };
+
+  const pending = approvals.filter(a => a.status === 'pending');
+  const decided = approvals.filter(a => a.status !== 'pending');
+
+  const ApprovalCard = ({ a }) => (
+    <div className={`approval-card ${a.status !== 'pending' ? 'approval-card--decided' : ''}`}>
+      <div className="approval-card-header">
+        <span className="approval-day">{a.day} {a.meal_type}</span>
+        <span className={`approval-badge approval-badge--${a.status}`}>{a.status}</span>
+      </div>
+      {a.issue && <div className="approval-issue">{a.issue}</div>}
+      <div className="approval-detail">
+        {a.original_ingredient && <span className="approval-original">Was: {a.original_ingredient}</span>}
+        {a.proposed_change && <span className="approval-proposed">Proposed: {a.proposed_change}</span>}
+      </div>
+      {a.reason && <div className="approval-reason">{a.reason}</div>}
+      {a.status === 'pending' && (
+        <div className="approval-actions">
+          <button className="btn btn-primary btn-sm" onClick={() => decide(a.id, 'approve')}>
+            <Icon name="Check" size={13} /> Approve
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => decide(a.id, 'reject')}>
+            <Icon name="X" size={13} /> Reject
+          </button>
+        </div>
+      )}
+      {a.status !== 'pending' && a.decision_reason && (
+        <div className="approval-decision-note">{a.decision_reason}</div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="screen">
+      <div className="screen-header">
+        <h1 className="screen-title">Household Approvals</h1>
+        <button className="btn btn-ghost btn-sm" onClick={load}><Icon name="RefreshCw" size={14} /> Refresh</button>
+      </div>
+
+      {loading ? <div className="empty-state">Loading...</div> : (
+        <>
+          {approvals.length === 0 && (
+            <div className="empty-state">No approval requests yet. When Arjun needs a substitution approved, it will appear here.</div>
+          )}
+          {pending.length > 0 && (
+            <section className="approvals-section">
+              <h2 className="approvals-section-title">Pending ({pending.length})</h2>
+              {pending.map(a => <ApprovalCard key={a.id} a={a} />)}
+            </section>
+          )}
+          {decided.length > 0 && (
+            <section className="approvals-section">
+              <h2 className="approvals-section-title">Decided</h2>
+              {decided.map(a => <ApprovalCard key={a.id} a={a} />)}
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ===================================================================
    SETTINGS SCREEN
    =================================================================== */
 function SettingsScreen() {
@@ -1858,6 +1950,7 @@ function App() {
       case 'mealplan':  return <MealPlanScreen />;
       case 'grocery':   return <GroceryScreen />;
       case 'household':  return <HouseholdScreen />;
+      case 'approvals':  return <ApprovalsScreen />;
       case 'analytics':  return <AnalyticsScreen />;
       case 'settings':   return <SettingsScreen />;
       default:           return <OverviewScreen onNavigate={navigate} />;

@@ -2032,3 +2032,52 @@ svg.icon {
   .greeting-time { font-size: 24px; }
 }
 
+
+/* ---- Approvals Screen ---- */
+.approvals-section { margin-bottom: 28px; }
+.approvals-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
+
+.approval-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 10px;
+}
+.approval-card--decided { opacity: .7; }
+
+.approval-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.approval-day { font-weight: 600; font-size: 14px; text-transform: capitalize; }
+
+.approval-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.approval-badge--pending  { background: #fff3cd; color: #856404; }
+.approval-badge--approved { background: #d1fae5; color: #065f46; }
+.approval-badge--rejected { background: #fee2e2; color: #991b1b; }
+
+.approval-issue { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+
+.approval-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.approval-original { color: var(--text-secondary); }
+.approval-proposed { color: var(--primary); font-weight: 500; }
+.approval-reason { font-size: 12px; color: var(--text-secondary); font-style: italic; margin-bottom: 10px; }
+.approval-decision-note { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+
+.approval-actions { display: flex; gap: 8px; margin-top: 4px; }
