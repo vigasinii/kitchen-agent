@@ -36,8 +36,35 @@ PLANNER_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "batch_update_meal_plan",
+            "description": "Update multiple meals in the current plan at once. Use this instead of calling update_meal_plan repeatedly. Validates all changes before committing any.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plan_id": {"type": "integer", "description": "The meal plan ID"},
+                    "updates": {
+                        "type": "array",
+                        "description": "List of meal updates to apply",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "day": {"type": "string", "description": "Day of the week (Monday, Tuesday, etc.)"},
+                                "meal_type": {"type": "string", "description": "breakfast, lunch, or dinner"},
+                                "new_meal": {"type": "string", "description": "The new meal description"}
+                            },
+                            "required": ["day", "meal_type", "new_meal"]
+                        }
+                    }
+                },
+                "required": ["plan_id", "updates"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "update_meal_plan",
-            "description": "Update a specific meal in the current plan.",
+            "description": "Update a single meal in the current plan. Use batch_update_meal_plan when changing multiple meals.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -72,7 +99,7 @@ Your personality:
 - You never suggest anything unsafe, but you explain why in a human way, not a warning label.
 
 Hard rules: every meal safe for ALL members. Strict allergens never included. Vegetarian alternative whenever meat is served.
-Use tools to fetch and update plans. No emojis. No em dashes. Numbered lists for steps, bullets for options."""
+Use tools to fetch and update plans. When updating multiple meals (e.g. all dinners), use batch_update_meal_plan with all changes in one call instead of calling update_meal_plan repeatedly. No emojis. No em dashes. Numbered lists for steps, bullets for options."""
 
 MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "5"))
 
@@ -204,6 +231,64 @@ class PlannerAgent:
                 return json.dumps({"success": True, "updated": f"{day} {meal_type} -> {tool_input['new_meal']}", "safety": "passed", "note": grocery_note.strip()})
             return json.dumps({"error": f"Day {day} not found in plan"})
 
+        elif tool_name == "batch_update_meal_plan":
+            plan = self.session.get(MealPlan, tool_input["plan_id"])
+            if not plan:
+                return json.dumps({"error": "Plan not found"})
+            updates = tool_input.get("updates", [])
+            if not updates:
+                return json.dumps({"error": "No updates provided"})
+
+            members = self.session.exec(select(HouseholdMember)).all()
+            member_data = [
+                {"name": m.name, "dietary_restrictions": json.loads(m.dietary_restrictions), "allergies": json.loads(m.allergies)}
+                for m in members
+            ]
+            # Validate all changes before applying any
+            violations = []
+            for u in updates:
+                safety = validate_meal_against_household(u["new_meal"], member_data)
+                if not safety["safe"]:
+                    violations.append({"day": u["day"], "meal_type": u["meal_type"], "violations": safety["violations"]})
+            if violations:
+                return json.dumps({"error": "Batch rejected: safety violations detected", "violations": violations})
+
+            meals = json.loads(plan.meals)
+            applied = []
+            skipped = []
+            for u in updates:
+                day, meal_type, new_meal = u["day"], u["meal_type"], u["new_meal"]
+                if day in meals:
+                    meals[day][meal_type] = new_meal
+                    applied.append(f"{day} {meal_type}")
+                else:
+                    skipped.append(day)
+
+            plan.meals = json.dumps(meals)
+            self.session.add(plan)
+            self.session.commit()
+
+            # Regenerate grocery list if one exists
+            from models import GroceryList
+            from sqlmodel import select as sql_select
+            existing_grocery = self.session.exec(
+                sql_select(GroceryList).where(GroceryList.meal_plan_id == plan.id)
+            ).first()
+            if existing_grocery:
+                items = consolidate_grocery_list(meals)
+                existing_grocery.items = json.dumps(items)
+                existing_grocery.status = "pending"
+                self.session.add(existing_grocery)
+                self.session.commit()
+
+            return json.dumps({
+                "success": True,
+                "applied_count": len(applied),
+                "applied": applied,
+                "skipped": skipped,
+                "plan_id": plan.id,
+            })
+
         elif tool_name == "get_current_plan":
             plans = self.session.exec(select(MealPlan).order_by(MealPlan.id.desc())).all()
             if not plans:
@@ -231,6 +316,7 @@ class PlannerAgent:
         response_text = ""
         executed_state_tools: dict = {}  # key -> result, prevents duplicate DB writes
         all_tool_calls: dict = {}  # key -> call count, detects read-tool loops
+        completed_successfully = False
 
         for round_num in range(MAX_TOOL_ROUNDS):
             resp, provider, model = self.provider.call(messages, PLANNER_TOOLS)
@@ -255,7 +341,7 @@ class PlannerAgent:
                     args = json.loads(tc.function.arguments)
                     dedup_key = (tc.function.name, tc.function.arguments)
 
-                    # Count every call; break loop if same tool+args called 3+ times
+                    # Break loop if same tool+args called 3+ times
                     all_tool_calls[dedup_key] = all_tool_calls.get(dedup_key, 0) + 1
                     if all_tool_calls[dedup_key] >= 3:
                         print(f"[PLANNER] loop detected: {tc.function.name} called {all_tool_calls[dedup_key]}x with same args")
@@ -265,7 +351,7 @@ class PlannerAgent:
 
                     if tc.function.name in STATE_CHANGING_TOOLS and dedup_key in executed_state_tools:
                         result = executed_state_tools[dedup_key]
-                        print(f"[PLANNER] skipping duplicate state-changing tool: {tc.function.name}")
+                        print(f"[PLANNER] step={round_num+1} tool={tc.function.name} dedup_hit=true")
                     else:
                         result = self._execute_tool(tc.function.name, args)
                         result_obj = json.loads(result) if result else {}
@@ -281,9 +367,16 @@ class PlannerAgent:
                     break
             else:
                 response_text = msg.content or ""
+                completed_successfully = True
                 break
-        else:
-            response_text = "I reached the maximum number of steps. Please try a simpler request."
+
+        if not completed_successfully and not response_text:
+            # Check if any state-changing tool succeeded — if so don't claim failure
+            if executed_state_tools:
+                print(f"[PLANNER] hit step limit but {len(executed_state_tools)} state changes succeeded")
+                response_text = "Done. The changes have been saved, but I ran out of steps before summarising them. Please check the plan page."
+            else:
+                response_text = "I could not complete this in time. Please try a simpler request."
 
         if not response_text:
             response_text = "I could not generate a response. Please try again."

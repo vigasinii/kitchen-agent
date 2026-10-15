@@ -24,6 +24,7 @@ _NOT_FOUND_CODES = {404}
 STATE_CHANGING_TOOLS = frozenset({
     "create_meal_plan",
     "update_meal_plan",
+    "batch_update_meal_plan",
     "update_cook_session",
     "complete_session",
     "flag_household_approval_needed",
