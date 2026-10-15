@@ -620,7 +620,7 @@ function SpeakingBanner() {
     speakingListeners.add(setSpeaking);
     return () => speakingListeners.delete(setSpeaking);
   }, []);
-  useEffect(() => { if (isSpeaking) setSpeaker(currentSpeaker); }, [speaking]);
+  useEffect(() => { setSpeaker(currentSpeaker); }, [speaking]);
   if (!speaking) return null;
   return (
     <div className="speaking-banner" onClick={stopSpeaking}>
