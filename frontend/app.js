@@ -1780,7 +1780,7 @@ function ApprovalsScreen() {
   const load = () => {
     setLoading(true);
     axios.get(`${API}/approvals`)
-      .then(r => setApprovals(r.data.approvals || []))
+      .then(r => setApprovals(Array.isArray(r.data) ? r.data : (r.data.approvals || [])))
       .catch(() => addToast('Could not load approvals', 'error'))
       .finally(() => setLoading(false));
   };
